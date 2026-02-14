@@ -1,0 +1,5 @@
+{
+  "name": "Final DarshanInventory",
+  "description": "A comprehensive stock management system for the Darshan school network, allowing Head Office and School Accountants to manage inventory, track issues, and monitor assets across multiple branches.",
+  "requestFramePermissions": []
+}
