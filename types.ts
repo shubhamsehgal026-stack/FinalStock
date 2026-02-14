@@ -63,6 +63,8 @@ export interface Transaction {
   totalValue?: number; // Only for opening/purchase
   issuedTo?: string; // Only for issue (Display Name)
   issuedToId?: string; // Only for issue (Employee ID)
+  billNumber?: string; // Only for PURCHASE
+  billAttachment?: string; // Base64 or URL
   createdAt: number;
 }
 

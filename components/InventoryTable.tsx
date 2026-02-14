@@ -34,7 +34,7 @@ export const InventoryTable: React.FC<Props> = ({ data, showSchoolName }) => {
             data.map((item, idx) => (
               <tr key={idx} className="bg-white border-b hover:bg-gray-50 transition-colors">
                 {showSchoolName && (
-                  <td className="px-4 py-3 md:px-6 font-medium text-gray-900">{item.schoolId}</td>
+                  <td className="px-4 py-3 md:px-6 font-medium text-gray-900">{item.schoolId.toUpperCase()}</td>
                 )}
                 <td className="px-4 py-3 md:px-6">{item.category}</td>
                 <td className="px-4 py-3 md:px-6">

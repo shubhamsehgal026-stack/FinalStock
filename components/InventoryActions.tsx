@@ -1,8 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
-import { DEFAULT_CATEGORIES } from '../constants';
 import { Transaction, TransactionType, UserRole } from '../types';
-import { PlusCircle, ArrowUpRight, Save, History, FileText, Search, RotateCcw, X } from 'lucide-react';
+import { PlusCircle, ArrowUpRight, Save, History, FileText, Search, RotateCcw, X, UploadCloud } from 'lucide-react';
 
 interface ActionProps {
     filterStartDate?: string;
@@ -12,20 +11,50 @@ interface ActionProps {
 const inputClass = "mt-1 block w-full rounded-md border-slate-600 bg-slate-800 text-white shadow-sm p-2 border placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none";
 
 export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEndDate }) => {
-  const { addTransaction, currentUser, transactions } = useAppStore();
+  const { addTransaction, currentUser, transactions, categories } = useAppStore();
+  
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
-    category: DEFAULT_CATEGORIES[0],
+    category: categories[0] || '',
     subCategory: '',
     itemName: '',
     quantity: 1,
     unitPrice: 0,
-    type: TransactionType.PURCHASE
+    type: TransactionType.PURCHASE,
+    billNumber: '',
+    billAttachment: ''
   });
+
+  // Update default category if categories load later
+  useEffect(() => {
+    if (!formData.category && categories.length > 0) {
+        setFormData(prev => ({...prev, category: categories[0]}));
+    }
+  }, [categories, formData.category]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        alert("File size should be less than 5MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, billAttachment: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser?.schoolId) return;
+
+    if (formData.type === TransactionType.PURCHASE && !formData.billNumber) {
+        alert("Bill Number is mandatory for New Purchases");
+        return;
+    }
 
     addTransaction({
       date: formData.date,
@@ -36,11 +65,21 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
       itemName: formData.itemName,
       quantity: Number(formData.quantity),
       unitPrice: Number(formData.unitPrice),
-      totalValue: Number(formData.quantity) * Number(formData.unitPrice)
+      totalValue: Number(formData.quantity) * Number(formData.unitPrice),
+      billNumber: formData.type === TransactionType.PURCHASE ? formData.billNumber : undefined,
+      billAttachment: formData.type === TransactionType.PURCHASE ? formData.billAttachment : undefined
     });
 
     alert("Stock Added Successfully!");
-    setFormData({ ...formData, itemName: '', quantity: 1, unitPrice: 0, subCategory: '' });
+    setFormData({ 
+        ...formData, 
+        itemName: '', 
+        quantity: 1, 
+        unitPrice: 0, 
+        subCategory: '', 
+        billNumber: '',
+        billAttachment: ''
+    });
   };
 
   const recentHistory = transactions
@@ -90,6 +129,43 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
             </div>
           </div>
 
+          {/* Conditional Fields for New Purchase */}
+          {formData.type === TransactionType.PURCHASE && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                  <div>
+                      <label className="block text-sm font-medium text-gray-700">Bill Number <span className="text-red-500">*</span></label>
+                      <input 
+                          type="text" 
+                          placeholder="Invoice No."
+                          className={inputClass}
+                          value={formData.billNumber}
+                          onChange={(e) => setFormData({...formData, billNumber: e.target.value})}
+                          required
+                      />
+                  </div>
+                  <div>
+                      <label className="block text-sm font-medium text-gray-700">Upload Bill <span className="text-xs text-gray-400">(Optional)</span></label>
+                      <div className="relative">
+                          <input 
+                              type="file" 
+                              className="hidden"
+                              id="bill-upload"
+                              accept="image/*,.pdf"
+                              onChange={handleFileChange}
+                              key={formData.billAttachment ? 'loaded' : 'empty'}
+                          />
+                          <label 
+                              htmlFor="bill-upload"
+                              className={`${inputClass} cursor-pointer flex items-center gap-2 truncate text-sm`}
+                          >
+                              <UploadCloud size={16} />
+                              {formData.billAttachment ? 'File Selected' : 'Choose File...'}
+                          </label>
+                      </div>
+                  </div>
+              </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Category</label>
@@ -98,7 +174,7 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
                 value={formData.category}
                 onChange={(e) => setFormData({...formData, category: e.target.value})}
               >
-                {DEFAULT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -182,7 +258,11 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
                   <tr key={t.id} className="border-b hover:bg-gray-50">
                     <td className="px-4 py-3 text-gray-900">{t.date}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      {t.itemName} <span className="text-xs text-gray-400 block">{t.category}</span>
+                      {t.itemName} 
+                      <span className="text-xs text-gray-400 block mt-0.5">
+                        {t.category} {t.subCategory && `• ${t.subCategory}`}
+                      </span>
+                      {t.billNumber && <span className="text-[10px] text-indigo-600 font-mono block mt-0.5">Inv: {t.billNumber}</span>}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-green-600">+{t.quantity}</td>
                     <td className="px-4 py-3 text-right">₹{t.unitPrice}</td>

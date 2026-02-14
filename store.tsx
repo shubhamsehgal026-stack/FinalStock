@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { UserRole, School, UserCredential, Transaction, TransactionType, StockSummary, Employee, StockRequest, RequestStatus } from './types';
-import { SCHOOLS, HEAD_OFFICE_CREDENTIALS, CENTRAL_STORE_CREDENTIALS, HO_STORE_ID, MASTER_PASSWORD } from './constants';
+import { SCHOOLS, HEAD_OFFICE_CREDENTIALS, CENTRAL_STORE_CREDENTIALS, HO_STORE_ID, MASTER_PASSWORD, DEFAULT_CATEGORIES } from './constants';
 import { supabase } from './supabase';
 
 interface CurrentUser {
@@ -36,6 +36,11 @@ interface AppState {
   employees: Employee[];
   addEmployee: (emp: Employee) => void;
   removeEmployee: (id: string, schoolId: string) => void;
+
+  categories: string[];
+  addCategory: (name: string) => Promise<void>;
+  updateCategory: (oldName: string, newName: string) => Promise<void>;
+  
   isLoading: boolean;
 }
 
@@ -49,6 +54,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<StockRequest[]>([]);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
 
   // Initialize credentials with defaults for SCHOOLS, HO, and STORE
   const [userCredentials, setUserCredentials] = useState<UserCredential[]>(() => {
@@ -106,6 +112,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             totalValue: Number(t.total_value),
             issuedTo: t.issued_to,
             issuedToId: t.issued_to_id,
+            billNumber: t.bill_number,
+            billAttachment: t.bill_attachment,
             createdAt: Number(t.created_at)
           }));
           setTransactions(mappedTx);
@@ -154,6 +162,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 }
                 return c;
             }));
+        }
+
+        // 5. Fetch Custom Categories
+        const { data: catData } = await supabase.from('categories').select('*');
+        if (catData) {
+            const dbCategories = catData.map((c: any) => c.name);
+            setCategories(prev => Array.from(new Set([...prev, ...dbCategories])));
         }
 
       } catch (err) {
@@ -267,6 +282,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       total_value: t.totalValue,
       issued_to: t.issuedTo,
       issued_to_id: t.issuedToId,
+      bill_number: t.billNumber,
+      bill_attachment: t.billAttachment,
       created_at: createdAt
     }]).select();
 
@@ -429,6 +446,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const addCategory = async (name: string) => {
+      // Normalize to Title Case or similar if needed, here just raw string
+      if (categories.includes(name)) return;
+      
+      // Optimistic
+      setCategories(prev => [...prev, name]);
+
+      const { error } = await supabase.from('categories').insert([{ name }]);
+      if (error) {
+          console.error("Error adding category:", error);
+      }
+  };
+
+  const updateCategory = async (oldName: string, newName: string) => {
+      if (!newName || newName === oldName) return;
+      if (categories.includes(newName)) {
+          alert("Category name already exists!");
+          return;
+      }
+
+      // Optimistic Update for Master List
+      setCategories(prev => prev.map(c => c === oldName ? newName : c));
+      
+      // Optimistic Update for Transactions and Requests (so UI reflects immediately)
+      setTransactions(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
+      setRequests(prev => prev.map(r => r.category === oldName ? { ...r, category: newName } : r));
+
+      const { error } = await supabase.from('categories').update({ name: newName }).eq('name', oldName);
+      
+      if (error) {
+         console.error("Error updating category:", error);
+         alert("Failed to update category in database");
+      } else {
+         // Attempt to update references in other tables
+         // Note: Without foreign keys or triggers, we must do this manually.
+         await supabase.from('transactions').update({ category: newName }).eq('category', oldName);
+         await supabase.from('requests').update({ category: newName }).eq('category', oldName);
+      }
+  };
+
   const getComputedStock = (filterSchoolId?: string, fyStart?: string, fyEnd?: string) => {
     const summaryMap = new Map<string, StockSummary>();
 
@@ -494,6 +551,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       employees,
       addEmployee,
       removeEmployee,
+      categories,
+      addCategory,
+      updateCategory,
       isLoading
     }}>
       {children}

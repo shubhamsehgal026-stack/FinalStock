@@ -1,20 +1,19 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore } from '../store';
-import { DEFAULT_CATEGORIES } from '../constants';
 import { RequestStatus, TransactionType, StockRequest } from '../types';
 import { Send, Clock, CheckCircle, XCircle, Search, Edit3, ArrowRight, Package, PlusSquare, Trash2, Save, X } from 'lucide-react';
 
 const inputClass = "mt-1 block w-full rounded-md border-slate-600 bg-slate-800 text-white shadow-sm p-2 border placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none";
 
 export const UserRequestForm: React.FC = () => {
-  const { addRequest, updateRequest, deleteRequest, currentUser, requests, getComputedStock } = useAppStore();
+  const { addRequest, updateRequest, deleteRequest, currentUser, requests, getComputedStock, categories } = useAppStore();
   const [requestMode, setRequestMode] = useState<'STOCK' | 'NEW'>('STOCK');
   const [editingId, setEditingId] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
   
   // State for "New Item" Request
   const [newData, setNewData] = useState({
-    category: DEFAULT_CATEGORIES[0],
+    category: categories[0] || '',
     subCategory: '',
     itemName: '',
     quantity: 1,
@@ -27,6 +26,13 @@ export const UserRequestForm: React.FC = () => {
     itemName: '',
     quantity: 1
   });
+
+  // Update default category when loaded
+  useEffect(() => {
+    if (!newData.category && categories.length > 0) {
+        setNewData(prev => ({ ...prev, category: categories[0] }));
+    }
+  }, [categories, newData.category]);
 
   // Derived Data for Stock Dropdowns
   const currentStock = useMemo(() => 
@@ -95,7 +101,7 @@ export const UserRequestForm: React.FC = () => {
     }
     
     // Reset Forms
-    setNewData({ category: DEFAULT_CATEGORIES[0], itemName: '', quantity: 1, subCategory: '' });
+    setNewData({ category: categories[0] || '', itemName: '', quantity: 1, subCategory: '' });
     setStockData({ category: '', subCategory: '', itemName: '', quantity: 1 });
   };
 
@@ -131,7 +137,7 @@ export const UserRequestForm: React.FC = () => {
 
   const handleCancelEdit = () => {
     setEditingId(null);
-    setNewData({ category: DEFAULT_CATEGORIES[0], itemName: '', quantity: 1, subCategory: '' });
+    setNewData({ category: categories[0] || '', itemName: '', quantity: 1, subCategory: '' });
     // If we were in STOCK mode before, we could revert, but default to STOCK is fine
     setRequestMode('STOCK');
   };
@@ -233,7 +239,7 @@ export const UserRequestForm: React.FC = () => {
                         value={newData.category}
                         onChange={(e) => setNewData({...newData, category: e.target.value})}
                     >
-                        {DEFAULT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                     </div>
                     <div>

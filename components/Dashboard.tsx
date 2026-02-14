@@ -10,12 +10,12 @@ import { FINANCIAL_YEARS, getCurrentFinancialYear, HO_STORE_ID } from '../consta
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
-import { LogOut, LayoutDashboard, Shield, Package, School as SchoolIcon, KeyRound, ArrowDownToLine, ArrowUpFromLine, Calendar, Users, Trash2, Building, Bell, Send, FileSpreadsheet, X, ChevronRight, Layers, Lock, RotateCcw, Store, FolderInput, FolderOutput, LayoutGrid, Menu, Settings } from 'lucide-react';
+import { LogOut, LayoutDashboard, Shield, Package, School as SchoolIcon, KeyRound, ArrowDownToLine, ArrowUpFromLine, Calendar, Users, Trash2, Building, Bell, Send, FileSpreadsheet, X, ChevronRight, Layers, Lock, RotateCcw, Store, FolderInput, FolderOutput, LayoutGrid, Menu, Settings, Tags, Plus, Pencil, Check } from 'lucide-react';
 
 const inputClass = "mt-1 block w-full rounded-md border-slate-600 bg-slate-800 text-white shadow-sm p-2 border placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none";
 
 export const Dashboard: React.FC = () => {
-  const { currentUser, logout, getComputedStock, schools, updatePassword, updateEmployeePassword, changeOwnPassword, employees, addEmployee, removeEmployee, transactions, requests } = useAppStore();
+  const { currentUser, logout, getComputedStock, schools, updatePassword, updateEmployeePassword, changeOwnPassword, employees, addEmployee, removeEmployee, transactions, requests, categories, addCategory, updateCategory } = useAppStore();
   const [activeView, setActiveView] = useState<'DASH' | 'STOCK' | 'ISSUE' | 'RETURN' | 'ADMIN' | 'EMPLOYEES' | 'REQUESTS' | 'REPORTS' | 'HO_STORE_DASH' | 'HO_STORE_ADD' | 'HO_STORE_ISSUE' | 'SETTINGS'>('DASH');
   
   // Mobile Menu State
@@ -32,6 +32,11 @@ export const Dashboard: React.FC = () => {
   const [adminSchoolId, setAdminSchoolId] = useState('');
   const [adminRole, setAdminRole] = useState(UserRole.ACCOUNTANT);
   const [newPass, setNewPass] = useState('');
+
+  // Admin Category Management State
+  const [newCategory, setNewCategory] = useState('');
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
 
   // Self Password Change State
   const [myNewPassword, setMyNewPassword] = useState('');
@@ -204,6 +209,27 @@ export const Dashboard: React.FC = () => {
       setNewEmpName('');
       // Only reset school if HO. Accountants stay on their school.
       if (isHO) setNewEmpSchool('');
+  };
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newCategory) return;
+      await addCategory(newCategory);
+      setNewCategory('');
+      alert("Category Added!");
+  };
+
+  const startEditingCategory = (cat: string) => {
+    setEditingCategory(cat);
+    setEditCategoryName(cat);
+  };
+
+  const saveCategoryName = async () => {
+    if (editingCategory && editCategoryName) {
+        await updateCategory(editingCategory, editCategoryName);
+        setEditingCategory(null);
+        setEditCategoryName('');
+    }
   };
 
   // User Specific Data
@@ -783,7 +809,7 @@ export const Dashboard: React.FC = () => {
                     </div>
 
                     <div className="mt-8">
-                        <h3 className="text-lg font-semibold mb-4">Stock List (Snapshot End of FY)</h3>
+                        <h3 className="text-lg font-bold mb-4 text-blue-900">Stock List (Snapshot End of FY)</h3>
                         <InventoryTable data={stockData} showSchoolName={isHO && hoViewMode === 'HOLISTIC'} />
                     </div>
                 </div>
@@ -932,12 +958,13 @@ export const Dashboard: React.FC = () => {
                     <div className="flex items-center gap-3 mb-6 pb-4 border-b">
                         <KeyRound className="text-brand-600" size={28}/>
                         <div>
-                            <h2 className="text-xl font-bold">Password Management</h2>
-                            <p className="text-sm text-gray-500">Reset credentials for school accountants</p>
+                            <h2 className="text-xl font-bold">Admin & Security</h2>
+                            <p className="text-sm text-gray-500">Manage credentials and global settings</p>
                         </div>
                     </div>
 
                     <div className="space-y-4">
+                        <h3 className="font-bold text-gray-800 border-l-4 border-brand-500 pl-3">Reset Passwords</h3>
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Select Branch / Store</label>
                             <select 
@@ -984,6 +1011,68 @@ export const Dashboard: React.FC = () => {
                             >
                                 Update Password
                             </button>
+                        </div>
+                    </div>
+
+                    {/* Category Management */}
+                    <div className="mt-8 pt-8 border-t border-gray-100">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Tags className="text-brand-600" size={24}/>
+                            <div>
+                                <h3 className="text-lg font-bold">Category Master</h3>
+                                <p className="text-sm text-gray-500">Manage inventory categories available to all branches</p>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                            <form onSubmit={handleAddCategory} className="flex gap-4 items-end mb-6">
+                                <div className="flex-1">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">New Category Name</label>
+                                    <input 
+                                        type="text" 
+                                        className={inputClass}
+                                        value={newCategory}
+                                        onChange={(e) => setNewCategory(e.target.value)}
+                                        placeholder="e.g. Electronics, Music Instruments"
+                                        required
+                                    />
+                                </div>
+                                <button type="submit" className="bg-brand-600 text-white px-6 py-2.5 rounded-lg hover:bg-brand-700 font-medium flex items-center gap-2">
+                                    <Plus size={18} /> Add
+                                </button>
+                            </form>
+
+                            <div className="flex flex-wrap gap-2">
+                                {categories.map(cat => (
+                                    <div key={cat} className="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium shadow-sm flex items-center gap-2 group hover:border-brand-300 transition-colors">
+                                        {editingCategory === cat ? (
+                                            <div className="flex items-center gap-2">
+                                                 <input 
+                                                    type="text" 
+                                                    className="border-b border-brand-500 outline-none text-brand-700 w-32 bg-transparent p-0 text-sm"
+                                                    value={editCategoryName}
+                                                    onChange={(e) => setEditCategoryName(e.target.value)}
+                                                    autoFocus
+                                                    onKeyDown={(e) => { if(e.key === 'Enter') saveCategoryName(); }}
+                                                />
+                                                <button onClick={saveCategoryName} className="text-green-600 hover:text-green-800 bg-green-50 p-0.5 rounded-full"><Check size={12}/></button>
+                                                <button onClick={() => setEditingCategory(null)} className="text-red-500 hover:text-red-700 bg-red-50 p-0.5 rounded-full"><X size={12}/></button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <span>{cat}</span>
+                                                <button 
+                                                    onClick={() => startEditingCategory(cat)}
+                                                    className="text-gray-400 hover:text-brand-600 opacity-0 group-hover:opacity-100 transition-all scale-90 hover:scale-110"
+                                                    title="Edit Name"
+                                                >
+                                                    <Pencil size={12} />
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
