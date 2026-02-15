@@ -206,6 +206,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 employeeId: r.employee_id,
                 issueTransactionId: r.issue_transaction_id,
                 itemName: r.item_name,
+                quantity: Number(r.quantity),
                 status: r.status,
                 createdAt: Number(r.created_at)
             }));
@@ -461,6 +462,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           employee_id: req.employeeId,
           issue_transaction_id: req.issueTransactionId,
           item_name: req.itemName,
+          quantity: req.quantity,
           status: 'PENDING',
           created_at: createdAt
       }]).select();

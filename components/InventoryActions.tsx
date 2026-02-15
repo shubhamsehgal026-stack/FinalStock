@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { Transaction, TransactionType, UserRole } from '../types';
-import { PlusCircle, ArrowUpRight, Save, History, FileText, Search, RotateCcw, X, UploadCloud } from 'lucide-react';
+import { PlusCircle, ArrowUpRight, Save, History, FileText, Search, RotateCcw, X, UploadCloud, AlertCircle, Filter } from 'lucide-react';
 
 interface ActionProps {
     filterStartDate?: string;
@@ -556,10 +556,11 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
 };
 
 export const ReturnStockManager: React.FC = () => {
-    const { transactions, currentUser, addTransaction } = useAppStore();
+    const { transactions, currentUser, addTransaction, returnRequests, consumptionLogs } = useAppStore();
     const [searchTerm, setSearchTerm] = useState('');
     const [returnModalIssue, setReturnModalIssue] = useState<Transaction | null>(null);
     const [returnQty, setReturnQty] = useState(0);
+    const [showRequestedOnly, setShowRequestedOnly] = useState(false);
 
     const issues = transactions
         .filter(t => t.schoolId === currentUser?.schoolId && t.type === TransactionType.ISSUE)
@@ -567,37 +568,61 @@ export const ReturnStockManager: React.FC = () => {
 
     const returns = transactions.filter(t => t.schoolId === currentUser?.schoolId && t.type === TransactionType.RETURN);
 
-    // Filter by search
-    const filteredIssues = issues.filter(t => 
-        t.itemName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        t.issuedTo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.category.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Filter by search and requested status
+    const filteredIssues = issues.filter(t => {
+        const matchesSearch = t.itemName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+            t.issuedTo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            t.category.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        if (showRequestedOnly) {
+            const hasPendingRequest = returnRequests.some(r => r.issueTransactionId === t.id && r.status === 'PENDING');
+            return matchesSearch && hasPendingRequest;
+        }
+        return matchesSearch;
+    });
 
     const getReturnedQty = (issueId: string) => {
-        // We link returns to issue via issuedToId storing the original Transaction ID
         return returns
             .filter(r => r.issuedToId === issueId)
             .reduce((sum, r) => sum + r.quantity, 0);
     };
 
+    const getConsumedQty = (issueId: string) => {
+        return consumptionLogs
+            .filter(c => c.issueTransactionId === issueId)
+            .reduce((sum, c) => sum + c.quantityConsumed, 0);
+    };
+
     const handleReturnClick = (issue: Transaction) => {
         setReturnModalIssue(issue);
-        setReturnQty(0);
+        // Calculate max returnable based on actual In Hand quantity
+        const returned = getReturnedQty(issue.id);
+        const consumed = getConsumedQty(issue.id);
+        const inHand = issue.quantity - returned - consumed;
+
+        // Pre-fill quantity if request exists
+        const req = returnRequests.find(r => r.issueTransactionId === issue.id && r.status === 'PENDING');
+        if (req) {
+            // If requested qty > inHand, cap it at inHand
+            setReturnQty(Math.min(req.quantity, inHand));
+        } else {
+            setReturnQty(0);
+        }
     };
 
     const confirmReturn = () => {
         if (!returnModalIssue) return;
         const alreadyReturned = getReturnedQty(returnModalIssue.id);
-        const maxReturn = returnModalIssue.quantity - alreadyReturned;
+        const consumed = getConsumedQty(returnModalIssue.id);
+        const inHand = returnModalIssue.quantity - alreadyReturned - consumed;
         
         if (returnQty <= 0) {
             alert("Please enter a valid quantity");
             return;
         }
 
-        if (returnQty > maxReturn) {
-            alert(`Cannot return more than ${maxReturn} (Issued: ${returnModalIssue.quantity}, Already Returned: ${alreadyReturned})`);
+        if (returnQty > inHand) {
+            alert(`Cannot return more than In Hand quantity (${inHand}).\nIssued: ${returnModalIssue.quantity}\nReturned: ${alreadyReturned}\nConsumed: ${consumed}`);
             return;
         }
 
@@ -609,7 +634,6 @@ export const ReturnStockManager: React.FC = () => {
             subCategory: returnModalIssue.subCategory,
             itemName: returnModalIssue.itemName,
             quantity: returnQty,
-            // We use issuedTo to display who returned it, and issuedToId to link to original Transaction
             issuedTo: `Returned by ${returnModalIssue.issuedTo?.split('(')[0] || 'Unknown'}`,
             issuedToId: returnModalIssue.id
         });
@@ -626,15 +650,27 @@ export const ReturnStockManager: React.FC = () => {
                     <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
                         <RotateCcw className="text-indigo-600" /> Return Issued Items
                     </h2>
-                    <div className="relative w-full md:w-64">
-                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                        <input 
-                            type="text" 
-                            className="mt-1 block w-full rounded-md border-slate-600 bg-slate-800 text-white shadow-sm pl-10 p-2 border placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                            placeholder="Search item or employee..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button 
+                            onClick={() => setShowRequestedOnly(!showRequestedOnly)}
+                            className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md border transition-all ${
+                                showRequestedOnly 
+                                ? 'bg-orange-100 border-orange-200 text-orange-700' 
+                                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                            }`}
+                        >
+                            <Filter size={16} /> {showRequestedOnly ? 'Showing Requests' : 'Filter Requests'}
+                        </button>
+                        <div className="relative w-full md:w-64">
+                            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                            <input 
+                                type="text" 
+                                className="pl-10 w-full rounded-md border border-slate-300 p-2 text-sm bg-white"
+                                placeholder="Search item or employee..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -645,40 +681,56 @@ export const ReturnStockManager: React.FC = () => {
                                 <th className="px-6 py-3">Date</th>
                                 <th className="px-6 py-3">Issued To</th>
                                 <th className="px-6 py-3">Item</th>
-                                <th className="px-6 py-3 text-center">Qty Issued</th>
+                                <th className="px-6 py-3 text-center">Issued</th>
+                                <th className="px-6 py-3 text-center">Consumed</th>
+                                <th className="px-6 py-3 text-center">In Hand</th>
                                 <th className="px-6 py-3 text-center">Returned</th>
                                 <th className="px-6 py-3 text-right">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {filteredIssues.length === 0 ? (
-                                <tr><td colSpan={6} className="text-center py-8 text-gray-400">No matching issues found.</td></tr>
+                                <tr><td colSpan={8} className="text-center py-8 text-gray-400">No matching issues found.</td></tr>
                             ) : (
                                 filteredIssues.map(issue => {
                                     const returned = getReturnedQty(issue.id);
-                                    const remaining = issue.quantity - returned;
-                                    const isFullyReturned = remaining <= 0;
+                                    const consumed = getConsumedQty(issue.id);
+                                    const inHand = issue.quantity - returned - consumed;
+                                    const isFullyReturnedOrConsumed = inHand <= 0;
+                                    
+                                    const pendingRequest = returnRequests.find(r => r.issueTransactionId === issue.id && r.status === 'PENDING');
 
                                     return (
-                                        <tr key={issue.id} className="hover:bg-gray-50">
+                                        <tr key={issue.id} className={`hover:bg-gray-50 ${pendingRequest ? 'bg-orange-50/50' : ''}`}>
                                             <td className="px-6 py-4 text-gray-900">{issue.date}</td>
                                             <td className="px-6 py-4 font-medium text-gray-800">{issue.issuedTo}</td>
                                             <td className="px-6 py-4">
                                                 <div className="text-gray-900">{issue.itemName}</div>
                                                 <div className="text-xs text-gray-400">{issue.category}</div>
+                                                {pendingRequest && (
+                                                    <div className="text-xs text-orange-600 font-bold flex items-center gap-1 mt-1">
+                                                        <AlertCircle size={12} /> Requested: {pendingRequest.quantity}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4 text-center font-bold">{issue.quantity}</td>
+                                            <td className="px-6 py-4 text-center text-gray-500">{consumed}</td>
+                                            <td className="px-6 py-4 text-center font-bold text-brand-600">{inHand}</td>
                                             <td className="px-6 py-4 text-center text-indigo-600 font-semibold">{returned > 0 ? returned : '-'}</td>
                                             <td className="px-6 py-4 text-right">
-                                                {!isFullyReturned ? (
+                                                {!isFullyReturnedOrConsumed ? (
                                                     <button 
                                                         onClick={() => handleReturnClick(issue)}
-                                                        className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full font-medium hover:bg-indigo-100 border border-indigo-200 transition-colors"
+                                                        className={`text-xs px-3 py-1 rounded-full font-medium border transition-colors ${
+                                                            pendingRequest 
+                                                            ? 'bg-orange-600 text-white border-orange-600 hover:bg-orange-700 animate-pulse' 
+                                                            : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100'
+                                                        }`}
                                                     >
-                                                        Return
+                                                        {pendingRequest ? 'Accept Return' : 'Return'}
                                                     </button>
                                                 ) : (
-                                                    <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded">Completed</span>
+                                                    <span className="text-xs text-gray-400 font-medium bg-gray-100 px-2 py-1 rounded">Closed</span>
                                                 )}
                                             </td>
                                         </tr>
@@ -699,11 +751,16 @@ export const ReturnStockManager: React.FC = () => {
                             <button onClick={() => setReturnModalIssue(null)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
                         </div>
                         <div className="p-6">
-                            <div className="mb-4 text-sm text-gray-600">
+                            <div className="mb-4 text-sm text-gray-600 space-y-1 bg-gray-50 p-3 rounded-lg border border-gray-100">
                                 <p><strong>Item:</strong> {returnModalIssue.itemName}</p>
                                 <p><strong>Issued To:</strong> {returnModalIssue.issuedTo}</p>
-                                <p className="mt-2">
-                                    Available to return: <span className="font-bold text-gray-900">{returnModalIssue.quantity - getReturnedQty(returnModalIssue.id)}</span>
+                                <div className="border-t border-gray-200 my-2 pt-2 grid grid-cols-2 gap-2 text-xs">
+                                    <span>Total Issued: <span className="font-bold">{returnModalIssue.quantity}</span></span>
+                                    <span>Already Returned: <span className="font-bold">{getReturnedQty(returnModalIssue.id)}</span></span>
+                                    <span>Consumed: <span className="font-bold">{getConsumedQty(returnModalIssue.id)}</span></span>
+                                </div>
+                                <p className="text-center font-bold text-lg text-brand-700 pt-1">
+                                    In Hand (Max Return): {returnModalIssue.quantity - getReturnedQty(returnModalIssue.id) - getConsumedQty(returnModalIssue.id)}
                                 </p>
                             </div>
                             
@@ -711,7 +768,7 @@ export const ReturnStockManager: React.FC = () => {
                             <input 
                                 type="number" 
                                 min="1" 
-                                max={returnModalIssue.quantity - getReturnedQty(returnModalIssue.id)}
+                                max={returnModalIssue.quantity - getReturnedQty(returnModalIssue.id) - getConsumedQty(returnModalIssue.id)}
                                 className={inputClass}
                                 value={returnQty}
                                 onChange={(e) => setReturnQty(Number(e.target.value))}

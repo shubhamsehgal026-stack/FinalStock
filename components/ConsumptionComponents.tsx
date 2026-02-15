@@ -37,14 +37,17 @@ export const EmployeeConsumptionModule: React.FC = () => {
             const remaining = issue.quantity - returned - consumed;
 
             // Check if return requested
-            const isReturnRequested = returnRequests.some(r => r.issueTransactionId === issue.id && r.status === 'PENDING');
+            const activeRequest = returnRequests.find(r => r.issueTransactionId === issue.id && r.status === 'PENDING');
+            const isReturnRequested = !!activeRequest;
+            const requestedQty = activeRequest?.quantity || 0;
 
             return {
                 ...issue,
                 returned,
                 consumed,
                 remaining,
-                isReturnRequested
+                isReturnRequested,
+                requestedQty
             };
         }).filter(item => item.remaining > 0); // Only show active items
     }, [transactions, consumptionLogs, returnRequests, currentUser.employeeId]);
@@ -89,7 +92,10 @@ export const EmployeeConsumptionModule: React.FC = () => {
                         <p className="text-sm text-red-600">Please return the following items to the office immediately:</p>
                         <ul className="list-disc ml-5 mt-1 text-sm text-red-700 font-medium">
                             {pendingReturns.map(item => (
-                                <li key={item.id}>{item.itemName} (Qty: {item.remaining})</li>
+                                <li key={item.id}>
+                                    <span className="font-bold">{item.itemName}</span> 
+                                    <span className="text-red-800 ml-1">(Return Qty: {item.requestedQty})</span>
+                                </li>
                             ))}
                         </ul>
                     </div>
@@ -110,7 +116,7 @@ export const EmployeeConsumptionModule: React.FC = () => {
                             <div key={item.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative overflow-hidden bg-gray-50">
                                 {item.isReturnRequested && (
                                     <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">
-                                        RETURN REQUESTED
+                                        RETURN {item.requestedQty}
                                     </div>
                                 )}
                                 <h3 className="font-bold text-gray-800">{item.itemName}</h3>
@@ -222,6 +228,10 @@ export const AccountantConsumptionManager: React.FC = () => {
     const { transactions, consumptionLogs, returnRequests, addReturnRequest, currentUser } = useAppStore();
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState<'ISSUES' | 'LOGS'>('ISSUES');
+    
+    // Modal State
+    const [requestModalItem, setRequestModalItem] = useState<any>(null);
+    const [requestQty, setRequestQty] = useState(1);
 
     // 1. Calculate Active Issues for ALL Employees in this school
     const activeIssues = useMemo(() => {
@@ -240,9 +250,13 @@ export const AccountantConsumptionManager: React.FC = () => {
                 .reduce((sum, c) => sum + c.quantityConsumed, 0);
 
             const remaining = issue.quantity - returned - consumed;
-            const isReturnRequested = returnRequests.some(r => r.issueTransactionId === issue.id && r.status === 'PENDING');
+            
+            // Check for pending request
+            const pendingRequest = returnRequests.find(r => r.issueTransactionId === issue.id && r.status === 'PENDING');
+            const isReturnRequested = !!pendingRequest;
+            const requestedQty = pendingRequest?.quantity || 0;
 
-            return { ...issue, returned, consumed, remaining, isReturnRequested };
+            return { ...issue, returned, consumed, remaining, isReturnRequested, requestedQty };
         })
         .filter(item => item.remaining > 0) // Only active
         .filter(item => 
@@ -257,16 +271,29 @@ export const AccountantConsumptionManager: React.FC = () => {
         .filter(l => l.itemName.toLowerCase().includes(searchTerm.toLowerCase()))
         .sort((a, b) => b.createdAt - a.createdAt);
 
-    const handleRequestReturn = async (item: any) => {
-        if (!confirm(`Request return of ${item.itemName} from ${item.issuedTo}?`)) return;
+    const openRequestModal = (item: any) => {
+        setRequestModalItem(item);
+        setRequestQty(item.remaining); // Default to full remaining
+    };
+
+    const confirmRequestReturn = async () => {
+        if (!requestModalItem) return;
         
+        if (requestQty <= 0 || requestQty > requestModalItem.remaining) {
+            alert(`Invalid Quantity. Max available: ${requestModalItem.remaining}`);
+            return;
+        }
+
         await addReturnRequest({
             schoolId: currentUser?.schoolId || '',
-            employeeId: item.issuedToId || '',
-            issueTransactionId: item.id,
-            itemName: item.itemName
+            employeeId: requestModalItem.issuedToId || '',
+            issueTransactionId: requestModalItem.id,
+            itemName: requestModalItem.itemName,
+            quantity: Number(requestQty)
         });
+        
         alert("Return Request Sent to Employee");
+        setRequestModalItem(null);
     };
 
     return (
@@ -328,10 +355,12 @@ export const AccountantConsumptionManager: React.FC = () => {
                                             <td className="px-6 py-4 text-center font-bold text-brand-600">{item.remaining}</td>
                                             <td className="px-6 py-4 text-right">
                                                 {item.isReturnRequested ? (
-                                                    <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded">Requested</span>
+                                                    <span className="text-xs font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded" title={`Requested Qty: ${item.requestedQty}`}>
+                                                        Requested ({item.requestedQty})
+                                                    </span>
                                                 ) : (
                                                     <button 
-                                                        onClick={() => handleRequestReturn(item)}
+                                                        onClick={() => openRequestModal(item)}
                                                         className="text-xs bg-red-50 text-red-600 px-3 py-1 rounded-full font-medium hover:bg-red-100 border border-red-200 transition-colors flex items-center gap-1 ml-auto"
                                                     >
                                                         <CornerUpLeft size={12} /> Request Return
@@ -375,6 +404,44 @@ export const AccountantConsumptionManager: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* Request Return Modal */}
+            {requestModalItem && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm animate-in fade-in zoom-in duration-200">
+                        <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-red-50 rounded-t-xl">
+                            <h3 className="font-bold text-red-900 flex items-center gap-2"><CornerUpLeft size={18}/> Request Return</h3>
+                            <button onClick={() => setRequestModalItem(null)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <p className="text-sm text-gray-500">Employee: <span className="font-bold text-gray-800">{requestModalItem.issuedTo}</span></p>
+                                <p className="text-sm text-gray-500">Item: <span className="font-bold text-gray-800">{requestModalItem.itemName}</span></p>
+                                <p className="text-xs text-gray-400 mt-1">Currently In Hand: {requestModalItem.remaining}</p>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity to Return</label>
+                                <input 
+                                    type="number" 
+                                    min="1" 
+                                    max={requestModalItem.remaining} 
+                                    className={inputClass}
+                                    value={requestQty}
+                                    onChange={(e) => setRequestQty(Number(e.target.value))}
+                                />
+                            </div>
+
+                            <button 
+                                onClick={confirmRequestReturn}
+                                className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 font-medium mt-2"
+                            >
+                                Send Request
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

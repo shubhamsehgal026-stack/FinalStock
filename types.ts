@@ -82,6 +82,7 @@ export interface ReturnRequest {
   employeeId: string;
   issueTransactionId: string;
   itemName: string;
+  quantity: number;
   status: 'PENDING' | 'COMPLETED';
   createdAt: number;
 }
