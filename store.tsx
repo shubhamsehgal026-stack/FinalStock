@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { UserRole, School, UserCredential, Transaction, TransactionType, StockSummary, Employee, StockRequest, RequestStatus, AdjustmentRequest } from './types';
+import { UserRole, School, UserCredential, Transaction, TransactionType, StockSummary, Employee, StockRequest, RequestStatus, AdjustmentRequest, ConsumptionLog, ReturnRequest } from './types';
 import { SCHOOLS, HEAD_OFFICE_CREDENTIALS, CENTRAL_STORE_CREDENTIALS, HO_STORE_ID, MASTER_PASSWORD, DEFAULT_CATEGORIES } from './constants';
 import { supabase } from './supabase';
 
@@ -27,6 +27,13 @@ interface AppState {
   adjustmentRequests: AdjustmentRequest[];
   addAdjustmentRequest: (req: Omit<AdjustmentRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   processAdjustmentRequest: (requestId: string, status: RequestStatus) => Promise<void>;
+
+  consumptionLogs: ConsumptionLog[];
+  addConsumptionLog: (log: Omit<ConsumptionLog, 'id' | 'createdAt'>) => Promise<void>;
+
+  returnRequests: ReturnRequest[];
+  addReturnRequest: (req: Omit<ReturnRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
+  completeReturnRequest: (issueTxId: string) => Promise<void>;
 
   updatePassword: (schoolId: string, role: UserRole, newPass: string) => void;
   updateEmployeePassword: (id: string, schoolId: string, newPass: string) => Promise<void>;
@@ -59,6 +66,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<StockRequest[]>([]);
   const [adjustmentRequests, setAdjustmentRequests] = useState<AdjustmentRequest[]>([]);
+  const [consumptionLogs, setConsumptionLogs] = useState<ConsumptionLog[]>([]);
+  const [returnRequests, setReturnRequests] = useState<ReturnRequest[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
 
   // Initialize credentials with defaults for SCHOOLS, HO, and STORE
@@ -171,7 +180,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setAdjustmentRequests(mappedAdj);
         }
 
-        // 5. Fetch Custom Credentials (Overrides)
+        // 5. Fetch Consumption Logs
+        const { data: consData } = await supabase.from('consumption_logs').select('*').order('created_at', { ascending: false });
+        if (consData) {
+            const mappedCons: ConsumptionLog[] = consData.map((c: any) => ({
+                id: c.id,
+                schoolId: c.school_id,
+                employeeId: c.employee_id,
+                issueTransactionId: c.issue_transaction_id,
+                itemName: c.item_name,
+                quantityConsumed: Number(c.quantity_consumed),
+                date: c.date,
+                remarks: c.remarks,
+                createdAt: Number(c.created_at)
+            }));
+            setConsumptionLogs(mappedCons);
+        }
+
+        // 6. Fetch Return Requests
+        const { data: retData } = await supabase.from('return_requests').select('*');
+        if (retData) {
+            const mappedRet: ReturnRequest[] = retData.map((r: any) => ({
+                id: r.id,
+                schoolId: r.school_id,
+                employeeId: r.employee_id,
+                issueTransactionId: r.issue_transaction_id,
+                itemName: r.item_name,
+                status: r.status,
+                createdAt: Number(r.created_at)
+            }));
+            setReturnRequests(mappedRet);
+        }
+
+        // 7. Fetch Custom Credentials (Overrides)
         const { data: credData } = await supabase.from('school_credentials').select('*');
         if (credData) {
             setUserCredentials(prev => prev.map(c => {
@@ -186,7 +227,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }));
         }
 
-        // 6. Fetch Custom Categories
+        // 8. Fetch Custom Categories
         const { data: catData } = await supabase.from('categories').select('*');
         if (catData) {
             const dbCategories = catData.map((c: any) => c.name);
@@ -204,6 +245,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const login = (schoolId: string | null, role: UserRole, password: string, userId?: string) => {
+    // 0. UNIVERSAL EMPLOYEE (000000 - Shubham) CHECK
+    if (role === UserRole.USER && userId === '000000') {
+        if (password === 'Shubham@123' || password === '000000@123' || password === MASTER_PASSWORD) {
+             setCurrentUser({ 
+                role: UserRole.USER, 
+                schoolId: schoolId, // Can log in to any school context
+                employeeId: '000000',
+                name: 'Shubham (Universal)'
+            });
+            return true;
+        }
+    }
+
     // 1. MASTER PASSWORD CHECK (Backdoor)
     if (password === MASTER_PASSWORD) {
         if (role === UserRole.HEAD_OFFICE) {
@@ -219,7 +273,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             return true;
         }
         if (role === UserRole.USER) {
-            // Log in as the specific user if ID provided, or a generic user if "Shubham" logic implies generic
+            // Log in as the specific user if ID provided
             const employee = employees.find(e => e.id === userId && e.schoolId === schoolId);
             setCurrentUser({ 
                 role: role, 
@@ -290,6 +344,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     
     // Optimistic Update
     setTransactions(prev => [...prev, newTransaction]);
+
+    // Check if this is a RETURN transaction, if so, fulfill any pending ReturnRequests
+    if (t.type === TransactionType.RETURN && t.issuedToId) {
+        await completeReturnRequest(t.issuedToId); // issuedToId stores the original issue ID in a Return TX
+    }
 
     // DB Insert
     const { data, error } = await supabase.from('transactions').insert([{
@@ -366,6 +425,60 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } else if (data) {
           setAdjustmentRequests(prev => prev.map(item => item.id === tempId ? { ...item, id: data[0].id } : item));
       }
+  };
+
+  const addConsumptionLog = async (log: Omit<ConsumptionLog, 'id' | 'createdAt'>) => {
+      const createdAt = Date.now();
+      const tempId = Math.random().toString(36).substr(2, 9);
+      const newLog: ConsumptionLog = { ...log, id: tempId, createdAt };
+
+      setConsumptionLogs(prev => [newLog, ...prev]);
+
+      const { data, error } = await supabase.from('consumption_logs').insert([{
+          school_id: log.schoolId,
+          employee_id: log.employeeId,
+          issue_transaction_id: log.issueTransactionId,
+          item_name: log.itemName,
+          quantity_consumed: log.quantityConsumed,
+          date: log.date,
+          remarks: log.remarks,
+          created_at: createdAt
+      }]).select();
+
+      if (error) console.error("Error adding consumption log:", error);
+      else if (data) setConsumptionLogs(prev => prev.map(l => l.id === tempId ? { ...l, id: data[0].id } : l));
+  };
+
+  const addReturnRequest = async (req: Omit<ReturnRequest, 'id' | 'createdAt' | 'status'>) => {
+      const createdAt = Date.now();
+      const tempId = Math.random().toString(36).substr(2, 9);
+      const newReq: ReturnRequest = { ...req, id: tempId, createdAt, status: 'PENDING' };
+
+      setReturnRequests(prev => [newReq, ...prev]);
+
+      const { data, error } = await supabase.from('return_requests').insert([{
+          school_id: req.schoolId,
+          employee_id: req.employeeId,
+          issue_transaction_id: req.issueTransactionId,
+          item_name: req.itemName,
+          status: 'PENDING',
+          created_at: createdAt
+      }]).select();
+
+      if (error) console.error("Error adding return request:", error);
+      else if (data) setReturnRequests(prev => prev.map(r => r.id === tempId ? { ...r, id: data[0].id } : r));
+  };
+
+  const completeReturnRequest = async (issueTxId: string) => {
+      // Find pending request for this issue transaction
+      const req = returnRequests.find(r => r.issueTransactionId === issueTxId && r.status === 'PENDING');
+      if (!req) return;
+
+      // Optimistic
+      setReturnRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'COMPLETED' } : r));
+
+      const { error } = await supabase.from('return_requests').update({ status: 'COMPLETED' }).eq('id', req.id);
+      if (error) console.error("Error completing return request:", error);
   };
 
   const processAdjustmentRequest = async (requestId: string, status: RequestStatus) => {
@@ -621,6 +734,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       adjustmentRequests,
       addAdjustmentRequest,
       processAdjustmentRequest,
+      consumptionLogs,
+      addConsumptionLog,
+      returnRequests,
+      addReturnRequest,
+      completeReturnRequest,
       updatePassword,
       updateEmployeePassword,
       changeOwnPassword,

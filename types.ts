@@ -35,7 +35,8 @@ export enum TransactionType {
 export enum RequestStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
-  REJECTED = 'REJECTED'
+  REJECTED = 'REJECTED',
+  COMPLETED = 'COMPLETED'
 }
 
 export interface StockRequest {
@@ -60,6 +61,28 @@ export interface AdjustmentRequest {
   quantity: number;
   reason: string;
   status: RequestStatus;
+  createdAt: number;
+}
+
+export interface ConsumptionLog {
+  id: string;
+  schoolId: string;
+  employeeId: string;
+  issueTransactionId: string; // Links to the original Issue Transaction
+  itemName: string;
+  quantityConsumed: number;
+  date: string;
+  remarks: string;
+  createdAt: number;
+}
+
+export interface ReturnRequest {
+  id: string;
+  schoolId: string;
+  employeeId: string;
+  issueTransactionId: string;
+  itemName: string;
+  status: 'PENDING' | 'COMPLETED';
   createdAt: number;
 }
 

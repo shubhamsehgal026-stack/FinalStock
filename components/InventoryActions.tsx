@@ -308,14 +308,26 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
   }, [currentStock, formData.category]);
 
 
-  // Filter employees based on search
-  const filteredEmployees = employees
-    .filter(e => e.schoolId === currentUser?.schoolId)
-    .filter(e => 
-      e.id.toLowerCase().includes(employeeSearch.toLowerCase()) || 
-      e.name.toLowerCase().includes(employeeSearch.toLowerCase())
-    )
-    .slice(0, 8); // Limit suggestions
+  // Filter employees based on search, including the Universal Employee
+  const filteredEmployees = useMemo(() => {
+      // Current school employees
+      const schoolEmps = employees.filter(e => e.schoolId === currentUser?.schoolId);
+      
+      // Universal Employee (ID: 000000) - Always available
+      const universalEmp = { 
+          id: '000000', 
+          name: 'Shubham (Universal)', 
+          schoolId: currentUser?.schoolId || '' 
+      };
+      
+      // Combine and filter
+      return [universalEmp, ...schoolEmps]
+        .filter(e => 
+          e.id.toLowerCase().includes(employeeSearch.toLowerCase()) || 
+          e.name.toLowerCase().includes(employeeSearch.toLowerCase())
+        )
+        .slice(0, 8); // Limit suggestions
+  }, [employees, currentUser?.schoolId, employeeSearch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -463,7 +475,7 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
                             if (selectedEmployee) setSelectedEmployee(null); // Reset selection on type
                         }}
                         onFocus={() => setShowEmpDropdown(true)}
-                        placeholder="Type ID or Name (e.g. 367)"
+                        placeholder="Type ID or Name (e.g. 367 or Shubham)"
                         required={!selectedEmployee}
                     />
                   </div>
