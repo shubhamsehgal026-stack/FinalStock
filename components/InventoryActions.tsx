@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { Transaction, TransactionType, UserRole } from '../types';
-import { PlusCircle, ArrowUpRight, Save, History, FileText, Search, RotateCcw, X, UploadCloud, AlertCircle, Filter } from 'lucide-react';
+import { PlusCircle, ArrowUpRight, Save, History, FileText, Search, RotateCcw, X, UploadCloud, AlertCircle, Filter, RefreshCcw, AlertTriangle } from 'lucide-react';
 
 interface ActionProps {
     filterStartDate?: string;
@@ -556,11 +556,28 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
 };
 
 export const ReturnStockManager: React.FC = () => {
-    const { transactions, currentUser, addTransaction, returnRequests, consumptionLogs } = useAppStore();
+    const { transactions, currentUser, addTransaction, returnRequests, consumptionLogs, refreshData } = useAppStore();
     const [searchTerm, setSearchTerm] = useState('');
     const [returnModalIssue, setReturnModalIssue] = useState<Transaction | null>(null);
     const [returnQty, setReturnQty] = useState(0);
     const [showRequestedOnly, setShowRequestedOnly] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Refresh Data on Mount to ensure we have latest consumption logs
+    useEffect(() => {
+        const load = async () => {
+            setIsRefreshing(true);
+            await refreshData();
+            setIsRefreshing(false);
+        };
+        load();
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const handleManualRefresh = async () => {
+        setIsRefreshing(true);
+        await refreshData();
+        setIsRefreshing(false);
+    };
 
     const issues = transactions
         .filter(t => t.schoolId === currentUser?.schoolId && t.type === TransactionType.ISSUE)
@@ -643,6 +660,11 @@ export const ReturnStockManager: React.FC = () => {
         setReturnQty(0);
     };
 
+    // Helper variables for Modal logic
+    const modalInHand = returnModalIssue ? (returnModalIssue.quantity - getReturnedQty(returnModalIssue.id) - getConsumedQty(returnModalIssue.id)) : 0;
+    const modalPendingRequest = returnModalIssue ? returnRequests.find(r => r.issueTransactionId === returnModalIssue.id && r.status === 'PENDING') : null;
+    const modalIsRequestExceeding = modalPendingRequest && modalPendingRequest.quantity > modalInHand;
+
     return (
         <div className="space-y-6">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
@@ -651,6 +673,13 @@ export const ReturnStockManager: React.FC = () => {
                         <RotateCcw className="text-indigo-600" /> Return Issued Items
                     </h2>
                     <div className="flex gap-2 w-full md:w-auto">
+                        <button 
+                            onClick={handleManualRefresh}
+                            className={`p-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors ${isRefreshing ? 'animate-spin' : ''}`}
+                            title="Refresh Data"
+                        >
+                            <RefreshCcw size={18} />
+                        </button>
                         <button 
                             onClick={() => setShowRequestedOnly(!showRequestedOnly)}
                             className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md border transition-all ${
@@ -757,10 +786,21 @@ export const ReturnStockManager: React.FC = () => {
                                 <div className="border-t border-gray-200 my-2 pt-2 grid grid-cols-2 gap-2 text-xs">
                                     <span>Total Issued: <span className="font-bold">{returnModalIssue.quantity}</span></span>
                                     <span>Already Returned: <span className="font-bold">{getReturnedQty(returnModalIssue.id)}</span></span>
-                                    <span>Consumed: <span className="font-bold">{getConsumedQty(returnModalIssue.id)}</span></span>
+                                    <span>Consumed: <span className="font-bold text-orange-600">{getConsumedQty(returnModalIssue.id)}</span></span>
                                 </div>
-                                <p className="text-center font-bold text-lg text-brand-700 pt-1">
-                                    In Hand (Max Return): {returnModalIssue.quantity - getReturnedQty(returnModalIssue.id) - getConsumedQty(returnModalIssue.id)}
+                                
+                                {modalIsRequestExceeding && (
+                                     <div className="bg-red-50 border border-red-200 p-2 rounded text-xs text-red-700 font-medium mt-2 flex items-start gap-2">
+                                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5"/>
+                                        <div>
+                                            Requested: {modalPendingRequest?.quantity}, but only {modalInHand} available in hand.
+                                            <br/><span className="font-bold">Return capped at {modalInHand}.</span>
+                                        </div>
+                                     </div>
+                                )}
+
+                                <p className="text-center font-bold text-lg text-brand-700 pt-1 mt-2">
+                                    In Hand (Max Return): {modalInHand}
                                 </p>
                             </div>
                             
@@ -768,7 +808,7 @@ export const ReturnStockManager: React.FC = () => {
                             <input 
                                 type="number" 
                                 min="1" 
-                                max={returnModalIssue.quantity - getReturnedQty(returnModalIssue.id) - getConsumedQty(returnModalIssue.id)}
+                                max={modalInHand}
                                 className={inputClass}
                                 value={returnQty}
                                 onChange={(e) => setReturnQty(Number(e.target.value))}

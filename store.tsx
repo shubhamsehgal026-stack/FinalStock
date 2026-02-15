@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { UserRole, School, UserCredential, Transaction, TransactionType, StockSummary, Employee, StockRequest, RequestStatus, AdjustmentRequest, ConsumptionLog, ReturnRequest } from './types';
 import { SCHOOLS, HEAD_OFFICE_CREDENTIALS, CENTRAL_STORE_CREDENTIALS, HO_STORE_ID, MASTER_PASSWORD, DEFAULT_CATEGORIES } from './constants';
 import { supabase } from './supabase';
@@ -53,6 +53,7 @@ interface AppState {
   updateCategory: (oldName: string, newName: string) => Promise<void>;
   
   isLoading: boolean;
+  refreshData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -100,9 +101,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return creds;
   });
 
-  // Fetch Data from Supabase
-  useEffect(() => {
-    const fetchData = async () => {
+  const fetchData = useCallback(async () => {
       try {
         setIsLoading(true);
         
@@ -240,10 +239,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } finally {
         setIsLoading(false);
       }
-    };
+    }, []);
 
+  // Fetch Data from Supabase
+  useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
+
+  const refreshData = async () => {
+      await fetchData();
+  };
 
   const login = (schoolId: string | null, role: UserRole, password: string, userId?: string) => {
     // 0. UNIVERSAL EMPLOYEE (000000 - Shubham) CHECK
@@ -753,7 +758,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       categories,
       addCategory,
       updateCategory,
-      isLoading
+      isLoading,
+      refreshData
     }}>
       {children}
     </AppContext.Provider>
