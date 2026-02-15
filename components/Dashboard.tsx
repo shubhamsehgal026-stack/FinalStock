@@ -4,19 +4,20 @@ import { UserRole, Employee, RequestStatus } from '../types';
 import { InventoryTable } from './InventoryTable';
 import { AddStockForm, IssueStockForm, ReturnStockManager } from './InventoryActions';
 import { UserRequestForm, AccountantRequestManager } from './RequestComponents';
+import { AccountantAdjustmentForm, HOAdjustmentManager } from './AdjustmentComponents';
 import { ReportsModule } from './ReportsModule';
 import { HOStoreModule } from './HOStoreModule';
 import { FINANCIAL_YEARS, getCurrentFinancialYear, HO_STORE_ID } from '../constants';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
-import { LogOut, LayoutDashboard, Shield, Package, School as SchoolIcon, KeyRound, ArrowDownToLine, ArrowUpFromLine, Calendar, Users, Trash2, Building, Bell, Send, FileSpreadsheet, X, ChevronRight, Layers, Lock, RotateCcw, Store, FolderInput, FolderOutput, LayoutGrid, Menu, Settings, Tags, Plus, Pencil, Check } from 'lucide-react';
+import { LogOut, LayoutDashboard, Shield, Package, School as SchoolIcon, KeyRound, ArrowDownToLine, ArrowUpFromLine, Calendar, Users, Trash2, Building, Bell, Send, FileSpreadsheet, X, ChevronRight, Layers, Lock, RotateCcw, Store, FolderInput, FolderOutput, LayoutGrid, Menu, Settings, Tags, Plus, Pencil, Check, AlertTriangle } from 'lucide-react';
 
 const inputClass = "mt-1 block w-full rounded-md border-slate-600 bg-slate-800 text-white shadow-sm p-2 border placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none";
 
 export const Dashboard: React.FC = () => {
-  const { currentUser, logout, getComputedStock, schools, updatePassword, updateEmployeePassword, changeOwnPassword, employees, addEmployee, removeEmployee, transactions, requests, categories, addCategory, updateCategory } = useAppStore();
-  const [activeView, setActiveView] = useState<'DASH' | 'STOCK' | 'ISSUE' | 'RETURN' | 'ADMIN' | 'EMPLOYEES' | 'REQUESTS' | 'REPORTS' | 'HO_STORE_DASH' | 'HO_STORE_ADD' | 'HO_STORE_ISSUE' | 'SETTINGS'>('DASH');
+  const { currentUser, logout, getComputedStock, schools, updatePassword, updateEmployeePassword, changeOwnPassword, employees, addEmployee, removeEmployee, transactions, requests, adjustmentRequests, categories, addCategory, updateCategory } = useAppStore();
+  const [activeView, setActiveView] = useState<'DASH' | 'STOCK' | 'ISSUE' | 'RETURN' | 'ADMIN' | 'EMPLOYEES' | 'REQUESTS' | 'REPORTS' | 'HO_STORE_DASH' | 'HO_STORE_ADD' | 'HO_STORE_ISSUE' | 'SETTINGS' | 'DAMAGE_REPORT' | 'DAMAGE_ADMIN'>('DASH');
   
   // Mobile Menu State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -70,9 +71,14 @@ export const Dashboard: React.FC = () => {
     }
   }, [isStoreManager, activeView]);
 
-  // Notification count for Accountant
+  // Notification count for Accountant (User Requests)
   const pendingRequestCount = isAccountant 
     ? requests.filter(r => r.schoolId === currentUser?.schoolId && r.status === RequestStatus.PENDING).length
+    : 0;
+
+  // Notification count for HO (Damage Requests)
+  const pendingDamageCount = isHO
+    ? adjustmentRequests.filter(r => r.status === RequestStatus.PENDING).length
     : 0;
 
   // Pre-fill school for Accountant in Employee View
@@ -276,6 +282,13 @@ export const Dashboard: React.FC = () => {
                         <Package size={20} /> Inventory View
                     </button>
                     <button 
+                        onClick={() => handleNavClick('DAMAGE_ADMIN')}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors justify-between ${activeView === 'DAMAGE_ADMIN' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                    >
+                        <div className="flex items-center gap-3"><AlertTriangle size={20} /> Damage Requests</div>
+                        {pendingDamageCount > 0 && <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{pendingDamageCount}</span>}
+                    </button>
+                    <button 
                         onClick={() => handleNavClick('EMPLOYEES')}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${activeView === 'EMPLOYEES' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
                     >
@@ -364,6 +377,12 @@ export const Dashboard: React.FC = () => {
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeView === 'RETURN' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
                     >
                         <RotateCcw size={20} /> Return Issue
+                    </button>
+                    <button 
+                        onClick={() => handleNavClick('DAMAGE_REPORT')}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeView === 'DAMAGE_REPORT' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                    >
+                        <AlertTriangle size={20} /> Report Damage
                     </button>
                     <button 
                         onClick={() => handleNavClick('REQUESTS')}
@@ -520,6 +539,20 @@ export const Dashboard: React.FC = () => {
 
             {(isHO || isStoreManager) && activeView === 'HO_STORE_ISSUE' && (
                 <HOStoreModule viewMode="ISSUE" />
+            )}
+
+            {/* ACCOUNTANT DAMAGE REPORT VIEW */}
+            {activeView === 'DAMAGE_REPORT' && isAccountant && (
+                <div className="max-w-6xl mx-auto space-y-8">
+                    <AccountantAdjustmentForm />
+                </div>
+            )}
+
+            {/* HO DAMAGE REQUEST ADMIN VIEW */}
+            {activeView === 'DAMAGE_ADMIN' && isHO && (
+                <div className="max-w-6xl mx-auto space-y-8">
+                    <HOAdjustmentManager />
+                </div>
             )}
 
             {/* SETTINGS VIEW (For All Users) */}

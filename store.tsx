@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { UserRole, School, UserCredential, Transaction, TransactionType, StockSummary, Employee, StockRequest, RequestStatus } from './types';
+import { UserRole, School, UserCredential, Transaction, TransactionType, StockSummary, Employee, StockRequest, RequestStatus, AdjustmentRequest } from './types';
 import { SCHOOLS, HEAD_OFFICE_CREDENTIALS, CENTRAL_STORE_CREDENTIALS, HO_STORE_ID, MASTER_PASSWORD, DEFAULT_CATEGORIES } from './constants';
 import { supabase } from './supabase';
 
@@ -23,6 +23,10 @@ interface AppState {
   updateRequest: (id: string, r: Partial<StockRequest>) => Promise<void>;
   deleteRequest: (id: string) => Promise<void>;
   processRequest: (requestId: string, status: RequestStatus, transactionDetails?: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
+
+  adjustmentRequests: AdjustmentRequest[];
+  addAdjustmentRequest: (req: Omit<AdjustmentRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
+  processAdjustmentRequest: (requestId: string, status: RequestStatus) => Promise<void>;
 
   updatePassword: (schoolId: string, role: UserRole, newPass: string) => void;
   updateEmployeePassword: (id: string, schoolId: string, newPass: string) => Promise<void>;
@@ -54,6 +58,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<StockRequest[]>([]);
+  const [adjustmentRequests, setAdjustmentRequests] = useState<AdjustmentRequest[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
 
   // Initialize credentials with defaults for SCHOOLS, HO, and STORE
@@ -131,7 +136,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setEmployees(mappedEmp);
         }
 
-        // 3. Fetch Requests
+        // 3. Fetch User Requests
         const { data: reqData } = await supabase.from('requests').select('*').order('created_at', { ascending: false });
         if (reqData) {
           const mappedReq: StockRequest[] = reqData.map((r: any) => ({
@@ -149,7 +154,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setRequests(mappedReq);
         }
 
-        // 4. Fetch Custom Credentials (Overrides)
+        // 4. Fetch Adjustment Requests
+        const { data: adjData } = await supabase.from('adjustment_requests').select('*').order('created_at', { ascending: false });
+        if (adjData) {
+            const mappedAdj: AdjustmentRequest[] = adjData.map((r: any) => ({
+                id: r.id,
+                schoolId: r.school_id,
+                category: r.category,
+                subCategory: r.sub_category,
+                itemName: r.item_name,
+                quantity: Number(r.quantity),
+                reason: r.reason,
+                status: r.status as RequestStatus,
+                createdAt: Number(r.created_at)
+            }));
+            setAdjustmentRequests(mappedAdj);
+        }
+
+        // 5. Fetch Custom Credentials (Overrides)
         const { data: credData } = await supabase.from('school_credentials').select('*');
         if (credData) {
             setUserCredentials(prev => prev.map(c => {
@@ -164,7 +186,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }));
         }
 
-        // 5. Fetch Custom Categories
+        // 6. Fetch Custom Categories
         const { data: catData } = await supabase.from('categories').select('*');
         if (catData) {
             const dbCategories = catData.map((c: any) => c.name);
@@ -319,6 +341,57 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else if (data) {
        setRequests(prev => prev.map(item => item.id === tempId ? { ...item, id: data[0].id } : item));
     }
+  };
+
+  const addAdjustmentRequest = async (req: Omit<AdjustmentRequest, 'id' | 'createdAt' | 'status'>) => {
+      const createdAt = Date.now();
+      const tempId = Math.random().toString(36).substr(2, 9);
+      const newReq: AdjustmentRequest = { ...req, id: tempId, createdAt, status: RequestStatus.PENDING };
+
+      setAdjustmentRequests(prev => [newReq, ...prev]);
+
+      const { data, error } = await supabase.from('adjustment_requests').insert([{
+          school_id: req.schoolId,
+          category: req.category,
+          sub_category: req.subCategory,
+          item_name: req.itemName,
+          quantity: req.quantity,
+          reason: req.reason,
+          status: RequestStatus.PENDING,
+          created_at: createdAt
+      }]).select();
+
+      if (error) {
+          console.error("Error adding adjustment request", error);
+      } else if (data) {
+          setAdjustmentRequests(prev => prev.map(item => item.id === tempId ? { ...item, id: data[0].id } : item));
+      }
+  };
+
+  const processAdjustmentRequest = async (requestId: string, status: RequestStatus) => {
+      // Optimistic update status
+      setAdjustmentRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
+
+      const request = adjustmentRequests.find(r => r.id === requestId);
+      
+      // If approved, create the damage transaction
+      if (status === RequestStatus.APPROVED && request) {
+          await addTransaction({
+              date: new Date().toISOString().split('T')[0],
+              schoolId: request.schoolId,
+              type: TransactionType.DAMAGE,
+              category: request.category,
+              subCategory: request.subCategory,
+              itemName: request.itemName,
+              quantity: request.quantity, // DAMAGE type will handle subtraction logic in stock calculation
+              totalValue: 0,
+              unitPrice: 0,
+              issuedTo: 'DAMAGED / WRITTEN OFF'
+          });
+      }
+
+      const { error } = await supabase.from('adjustment_requests').update({ status }).eq('id', requestId);
+      if (error) console.error("Error processing adjustment request:", error);
   };
 
   const updateRequest = async (id: string, r: Partial<StockRequest>) => {
@@ -520,6 +593,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } else if (t.type === TransactionType.ISSUE) {
         item.quantity -= t.quantity;
         if (inPeriod) item.totalIssued += t.quantity;
+      } else if (t.type === TransactionType.DAMAGE) {
+        // Damage reduces stock quantity but does NOT count as "Issued"
+        item.quantity -= t.quantity;
       } else if (t.type === TransactionType.RETURN) {
         item.quantity += t.quantity;
         // Reducing totalIssued keeps the Net Issue count correct
@@ -542,6 +618,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updateRequest,
       deleteRequest,
       processRequest,
+      adjustmentRequests,
+      addAdjustmentRequest,
+      processAdjustmentRequest,
       updatePassword,
       updateEmployeePassword,
       changeOwnPassword,

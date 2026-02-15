@@ -28,7 +28,8 @@ export enum TransactionType {
   OPENING_STOCK = 'OPENING_STOCK',
   PURCHASE = 'PURCHASE',
   ISSUE = 'ISSUE',
-  RETURN = 'RETURN'
+  RETURN = 'RETURN',
+  DAMAGE = 'DAMAGE'
 }
 
 export enum RequestStatus {
@@ -46,6 +47,18 @@ export interface StockRequest {
   subCategory: string;
   itemName: string;
   quantity: number;
+  status: RequestStatus;
+  createdAt: number;
+}
+
+export interface AdjustmentRequest {
+  id: string;
+  schoolId: string;
+  category: string;
+  subCategory: string;
+  itemName: string;
+  quantity: number;
+  reason: string;
   status: RequestStatus;
   createdAt: number;
 }
