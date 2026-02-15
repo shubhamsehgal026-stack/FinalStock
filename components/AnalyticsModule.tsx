@@ -44,6 +44,7 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
             if (role === UserRole.ACCOUNTANT && t.schoolId !== currentSchoolId) return;
             if (role === UserRole.HEAD_OFFICE && t.schoolId === 'HO_CENTRAL_STORE') return; // Exclude store from general analytics
 
+            // Calculate Value: Use stored totalValue if available, otherwise calc from qty * currentAvg
             const value = t.totalValue || (t.quantity * (priceMap.get(`${t.schoolId}-${t.itemName}`) || 0));
 
             const monthKey = t.date.substring(0, 7); // YYYY-MM
@@ -68,11 +69,29 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
                 // Monthly Trend
                 data.byMonth[monthKey].consumed += value;
 
+            } else if (t.type === TransactionType.RETURN) {
+                // LOGIC FIX: Returns reduce the Net Expense.
+                // We subtract the value of returned items from the Total Consumed Value.
+                data.totalConsumedValue -= value;
+
+                // Adjust aggregates so charts reflect Net Consumption
+                if (data.bySchool[t.schoolId]) {
+                    data.bySchool[t.schoolId] -= value;
+                }
+                if (data.byCategory[t.category]) {
+                    data.byCategory[t.category] -= value;
+                }
+                
+                // Adjust Monthly Trend (Net)
+                data.byMonth[monthKey].consumed -= value;
+
             } else if (t.type === TransactionType.PURCHASE || t.type === TransactionType.OPENING_STOCK) {
                 // Purchase Expense
                 data.totalPurchasedValue += (t.totalValue || 0);
                 data.byMonth[monthKey].purchased += (t.totalValue || 0);
+
             } else if (t.type === TransactionType.DAMAGE) {
+                // Damage is a separate loss category
                 data.totalDamagedValue += value;
             }
         });
@@ -114,14 +133,17 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
         </div>
     );
 
+    // Calculate Net Asset Value: Purchased - (Net Consumed) - Damaged
+    const netAssetValue = analyticsData.totalPurchasedValue - analyticsData.totalConsumedValue - analyticsData.totalDamagedValue;
+
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <StatCard 
-                    title="Total Expense (Issued)" 
+                    title="Net Expense (Issued)" 
                     value={`₹${analyticsData.totalConsumedValue.toLocaleString()}`} 
-                    sub={role === UserRole.HEAD_OFFICE ? "Total Value Issued by Accountants" : "Value Issued to Staff"}
+                    sub={role === UserRole.HEAD_OFFICE ? "Net Value Issued (Issued - Returned)" : "Value Issued to Staff (Net)"}
                     icon={ArrowUpRight}
                     color="text-orange-600"
                 />
@@ -134,7 +156,7 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
                 />
                 <StatCard 
                     title="Net Asset Value" 
-                    value={`₹${(analyticsData.totalPurchasedValue - analyticsData.totalConsumedValue - analyticsData.totalDamagedValue).toLocaleString()}`} 
+                    value={`₹${netAssetValue.toLocaleString()}`} 
                     sub="Value currently held in store"
                     icon={DollarSign}
                     color="text-blue-600"
@@ -164,7 +186,7 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11}} />
                                         <Tooltip 
-                                            formatter={(val: number) => [`₹${val.toLocaleString()}`, 'Expense']} 
+                                            formatter={(val: number) => [`₹${val.toLocaleString()}`, 'Net Expense']} 
                                             cursor={{fill: '#f8fafc'}} 
                                             contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
                                         />
@@ -229,7 +251,7 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
                                     <Tooltip formatter={(val: number) => `₹${val.toLocaleString()}`} />
                                     <Legend />
                                     <Area type="monotone" dataKey="purchased" stroke="#22c55e" fillOpacity={1} fill="url(#colorPurchased)" name="Purchases" />
-                                    <Area type="monotone" dataKey="consumed" stroke="#ef4444" fillOpacity={1} fill="url(#colorConsumed)" name="Expense (Issued)" />
+                                    <Area type="monotone" dataKey="consumed" stroke="#ef4444" fillOpacity={1} fill="url(#colorConsumed)" name="Net Expense (Issued - Returned)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
@@ -298,7 +320,7 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
                                     <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
                                     <Tooltip formatter={(val: number) => `₹${val.toLocaleString()}`} />
                                     <Legend />
-                                    <Line type="monotone" dataKey="consumed" stroke="#3b82f6" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} name="Consumption Value" />
+                                    <Line type="monotone" dataKey="consumed" stroke="#3b82f6" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} name="Net Consumption Value" />
                                 </LineChart>
                             </ResponsiveContainer>
                         </div>
