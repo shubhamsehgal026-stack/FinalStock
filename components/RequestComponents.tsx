@@ -311,7 +311,7 @@ export const UserRequestForm: React.FC = () => {
                   <div>
                     <h3 className="font-bold text-gray-800">{r.itemName}</h3>
                     <p className="text-xs text-gray-500">{r.category} • {r.subCategory}</p>
-                    <p className="text-sm mt-1">Qty: <span className="font-semibold">{r.quantity}</span></p>
+                    <p className="text-sm mt-1 text-gray-700">Qty: <span className="font-semibold text-gray-900">{r.quantity}</span></p>
                     <p className="text-xs text-gray-400 mt-2">{new Date(r.createdAt).toLocaleDateString()}</p>
                   </div>
                   <div className="flex flex-col gap-2 items-end">

@@ -10,16 +10,20 @@ interface ActionProps {
 
 const inputClass = "mt-1 block w-full rounded-md border-slate-600 bg-slate-800 text-white shadow-sm p-2 border placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none";
 
+const UNIT_OPTIONS = ['Pcs', 'Kg', 'Ltr', 'Mtr', 'Box', 'Set', 'Pkt', 'Doz'];
+
 export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEndDate }) => {
   const { addTransaction, currentUser, transactions, categories } = useAppStore();
   
+  // Using strings for numeric inputs to avoid leading zero issues and handle empty state
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     category: categories[0] || '',
     subCategory: '',
     itemName: '',
-    quantity: 1,
-    unitPrice: 0,
+    quantity: '', 
+    unit: 'Pcs',
+    unitPrice: '',
     type: TransactionType.PURCHASE,
     billNumber: '',
     billAttachment: ''
@@ -56,6 +60,11 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
         return;
     }
 
+    if (!formData.quantity || Number(formData.quantity) <= 0) {
+        alert("Please enter a valid quantity");
+        return;
+    }
+
     addTransaction({
       date: formData.date,
       schoolId: currentUser.schoolId,
@@ -64,8 +73,9 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
       subCategory: formData.subCategory,
       itemName: formData.itemName,
       quantity: Number(formData.quantity),
-      unitPrice: Number(formData.unitPrice),
-      totalValue: Number(formData.quantity) * Number(formData.unitPrice),
+      unit: formData.unit,
+      unitPrice: Number(formData.unitPrice || 0),
+      totalValue: Number(formData.quantity) * Number(formData.unitPrice || 0),
       billNumber: formData.type === TransactionType.PURCHASE ? formData.billNumber : undefined,
       billAttachment: formData.type === TransactionType.PURCHASE ? formData.billAttachment : undefined
     });
@@ -74,8 +84,8 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
     setFormData({ 
         ...formData, 
         itemName: '', 
-        quantity: 1, 
-        unitPrice: 0, 
+        quantity: '', 
+        unitPrice: '', 
         subCategory: '', 
         billNumber: '',
         billAttachment: ''
@@ -202,26 +212,40 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <div className="md:col-span-5">
               <label className="block text-sm font-medium text-gray-700">Quantity</label>
               <input 
                 type="number" 
-                min="1"
+                step="any"
+                min="0.0001"
+                placeholder="0.00"
                 className={inputClass}
                 value={formData.quantity}
-                onChange={(e) => setFormData({...formData, quantity: Number(e.target.value)})}
+                onChange={(e) => setFormData({...formData, quantity: e.target.value})}
                 required
               />
             </div>
-            <div>
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">Unit</label>
+              <select 
+                className={inputClass}
+                value={formData.unit}
+                onChange={(e) => setFormData({...formData, unit: e.target.value})}
+              >
+                  {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="md:col-span-4">
               <label className="block text-sm font-medium text-gray-700">Unit Cost (₹)</label>
               <input 
                 type="number" 
+                step="any"
                 min="0"
+                placeholder="0.00"
                 className={inputClass}
                 value={formData.unitPrice}
-                onChange={(e) => setFormData({...formData, unitPrice: Number(e.target.value)})}
+                onChange={(e) => setFormData({...formData, unitPrice: e.target.value})}
                 required
               />
             </div>
@@ -264,7 +288,7 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
                       </span>
                       {t.billNumber && <span className="text-[10px] text-indigo-600 font-mono block mt-0.5">Inv: {t.billNumber}</span>}
                     </td>
-                    <td className="px-4 py-3 text-right font-bold text-green-600">+{t.quantity}</td>
+                    <td className="px-4 py-3 text-right font-bold text-green-600">+{t.quantity} <span className="text-[10px] text-gray-500">{t.unit}</span></td>
                     <td className="px-4 py-3 text-right">₹{t.unitPrice}</td>
                   </tr>
                 ))
@@ -286,12 +310,14 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
   const [showEmpDropdown, setShowEmpDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<{id: string, name: string} | null>(null);
 
+  // Using string for quantity to allow decimals and empty initial state
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     category: '',
     subCategory: '',
     itemName: '',
-    quantity: 1,
+    quantity: '', 
+    unit: '', // Auto-fetched from stock item
   });
 
   // Derived state for cascading dropdowns
@@ -343,13 +369,19 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
         return;
     }
 
+    const qty = Number(formData.quantity);
+    if (!qty || qty <= 0) {
+        alert("Invalid Quantity");
+        return;
+    }
+
     const currentItem = currentStock.find(s => 
         s.category === formData.category && 
         s.subCategory === formData.subCategory && 
         s.itemName === formData.itemName
     );
 
-    if (!currentItem || currentItem.quantity < formData.quantity) {
+    if (!currentItem || currentItem.quantity < qty) {
         alert("Insufficient stock available!");
         return;
     }
@@ -361,13 +393,14 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
       category: formData.category,
       subCategory: formData.subCategory,
       itemName: formData.itemName,
-      quantity: Number(formData.quantity),
+      quantity: qty,
+      unit: currentItem.unit || 'Pcs',
       issuedTo: `${selectedEmployee.id} (${selectedEmployee.name})`,
       issuedToId: selectedEmployee.id
     });
 
     alert("Stock Issued Successfully!");
-    setFormData({ ...formData, quantity: 1, itemName: '', subCategory: '' }); 
+    setFormData({ ...formData, quantity: '', itemName: '', subCategory: '', unit: '' }); 
     // Reset employee selection
     setSelectedEmployee(null);
     setEmployeeSearch('');
@@ -376,10 +409,10 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
   const handleItemChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const val = e.target.value;
       if (!val) {
-          setFormData({...formData, itemName: '', subCategory: ''});
+          setFormData({...formData, itemName: '', subCategory: '', unit: ''});
       } else {
-          const [sub, name] = val.split('|||');
-          setFormData({...formData, subCategory: sub, itemName: name});
+          const [sub, name, unit] = val.split('|||');
+          setFormData({...formData, subCategory: sub, itemName: name, unit: unit || 'Pcs'});
       }
   };
 
@@ -434,15 +467,15 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
                   <label className="block text-sm font-medium text-gray-700">Select Item</label>
                   <select 
                       className={inputClass}
-                      value={formData.itemName ? `${formData.subCategory}|||${formData.itemName}` : ''}
+                      value={formData.itemName ? `${formData.subCategory}|||${formData.itemName}|||${formData.unit}` : ''}
                       onChange={handleItemChange}
                       disabled={!formData.category}
                       required
                   >
                       <option value="">-- Select Item --</option>
                       {availableItems.map((item, idx) => (
-                          <option key={idx} value={`${item.subCategory}|||${item.itemName}`}>
-                              {item.itemName} ({item.subCategory}) [Avail: {item.quantity}]
+                          <option key={idx} value={`${item.subCategory}|||${item.itemName}|||${item.unit}`}>
+                              {item.itemName} ({item.subCategory}) [Avail: {item.quantity} {item.unit}]
                           </option>
                       ))}
                   </select>
@@ -451,13 +484,15 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                  <label className="block text-sm font-medium text-gray-700">Quantity to Issue</label>
+                  <label className="block text-sm font-medium text-gray-700">Quantity to Issue {formData.unit ? `(${formData.unit})` : ''}</label>
                   <input 
                       type="number" 
-                      min="1"
+                      step="any"
+                      min="0.0001"
+                      placeholder="0.00"
                       className={inputClass}
                       value={formData.quantity}
-                      onChange={(e) => setFormData({...formData, quantity: Number(e.target.value)})}
+                      onChange={(e) => setFormData({...formData, quantity: e.target.value})}
                       required
                   />
               </div>
@@ -542,7 +577,7 @@ export const IssueStockForm: React.FC<ActionProps> = ({ filterStartDate, filterE
                       <div className="text-xs text-gray-400">{t.category} • {t.subCategory}</div>
                     </td>
                     <td className="px-6 py-4 text-right font-bold text-amber-600">
-                      -{t.quantity}
+                      -{t.quantity} <span className="text-[10px] text-gray-500">{t.unit}</span>
                     </td>
                   </tr>
                 ))
@@ -559,7 +594,7 @@ export const ReturnStockManager: React.FC = () => {
     const { transactions, currentUser, addTransaction, returnRequests, consumptionLogs, refreshData } = useAppStore();
     const [searchTerm, setSearchTerm] = useState('');
     const [returnModalIssue, setReturnModalIssue] = useState<Transaction | null>(null);
-    const [returnQty, setReturnQty] = useState(0);
+    const [returnQty, setReturnQty] = useState('');
     const [showRequestedOnly, setShowRequestedOnly] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -621,9 +656,9 @@ export const ReturnStockManager: React.FC = () => {
         const req = returnRequests.find(r => r.issueTransactionId === issue.id && r.status === 'PENDING');
         if (req) {
             // If requested qty > inHand, cap it at inHand
-            setReturnQty(Math.min(req.quantity, inHand));
+            setReturnQty(String(Math.min(req.quantity, inHand)));
         } else {
-            setReturnQty(0);
+            setReturnQty('');
         }
     };
 
@@ -633,12 +668,13 @@ export const ReturnStockManager: React.FC = () => {
         const consumed = getConsumedQty(returnModalIssue.id);
         const inHand = returnModalIssue.quantity - alreadyReturned - consumed;
         
-        if (returnQty <= 0) {
+        const qty = Number(returnQty);
+        if (!qty || qty <= 0) {
             alert("Please enter a valid quantity");
             return;
         }
 
-        if (returnQty > inHand) {
+        if (qty > inHand) {
             alert(`Cannot return more than In Hand quantity (${inHand}).\nIssued: ${returnModalIssue.quantity}\nReturned: ${alreadyReturned}\nConsumed: ${consumed}`);
             return;
         }
@@ -650,14 +686,15 @@ export const ReturnStockManager: React.FC = () => {
             category: returnModalIssue.category,
             subCategory: returnModalIssue.subCategory,
             itemName: returnModalIssue.itemName,
-            quantity: returnQty,
+            quantity: qty,
+            unit: returnModalIssue.unit || 'Pcs',
             issuedTo: `Returned by ${returnModalIssue.issuedTo?.split('(')[0] || 'Unknown'}`,
             issuedToId: returnModalIssue.id
         });
 
         alert("Stock Returned Successfully");
         setReturnModalIssue(null);
-        setReturnQty(0);
+        setReturnQty('');
     };
 
     // Helper variables for Modal logic
@@ -694,7 +731,7 @@ export const ReturnStockManager: React.FC = () => {
                             <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
                             <input 
                                 type="text" 
-                                className="pl-10 w-full rounded-md border border-slate-300 p-2 text-sm bg-white"
+                                className="pl-10 w-full rounded-md border border-slate-300 p-2 text-sm bg-white text-gray-900 placeholder-gray-400"
                                 placeholder="Search item or employee..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -742,9 +779,9 @@ export const ReturnStockManager: React.FC = () => {
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 text-center font-bold">{issue.quantity}</td>
+                                            <td className="px-6 py-4 text-center font-bold text-gray-900">{issue.quantity}</td>
                                             <td className="px-6 py-4 text-center text-gray-500">{consumed}</td>
-                                            <td className="px-6 py-4 text-center font-bold text-brand-600">{inHand}</td>
+                                            <td className="px-6 py-4 text-center font-bold text-brand-600">{inHand} <span className="text-[10px] text-gray-400 font-normal">{issue.unit}</span></td>
                                             <td className="px-6 py-4 text-center text-indigo-600 font-semibold">{returned > 0 ? returned : '-'}</td>
                                             <td className="px-6 py-4 text-right">
                                                 {!isFullyReturnedOrConsumed ? (
@@ -800,18 +837,19 @@ export const ReturnStockManager: React.FC = () => {
                                 )}
 
                                 <p className="text-center font-bold text-lg text-brand-700 pt-1 mt-2">
-                                    In Hand (Max Return): {modalInHand}
+                                    In Hand (Max Return): {modalInHand} {returnModalIssue.unit}
                                 </p>
                             </div>
                             
                             <label className="block text-sm font-medium text-gray-700 mb-1">Quantity to Return</label>
                             <input 
                                 type="number" 
-                                min="1" 
+                                step="any"
+                                min="0.0001" 
                                 max={modalInHand}
                                 className={inputClass}
                                 value={returnQty}
-                                onChange={(e) => setReturnQty(Number(e.target.value))}
+                                onChange={(e) => setReturnQty(e.target.value)}
                             />
 
                             <div className="mt-6 flex justify-end gap-3">

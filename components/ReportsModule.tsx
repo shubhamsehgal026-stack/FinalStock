@@ -1,6 +1,6 @@
 import React from 'react';
-import { StockSummary, Transaction, UserRole } from '../types';
-import { Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { StockSummary, Transaction, UserRole, TransactionType } from '../types';
+import { Download, FileSpreadsheet, FileText, AlertOctagon } from 'lucide-react';
 
 interface ReportsModuleProps {
     stockData: StockSummary[];
@@ -89,6 +89,24 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
         downloadCSV(reportData, `Transaction_History_${schoolName}_${financialYear}_${timestamp}.csv`);
     };
 
+    const handleDownloadDamageReport = () => {
+        const damageData = transactions
+            .filter(t => t.type === TransactionType.DAMAGE)
+            .map(t => ({
+                Date: t.date,
+                School: t.schoolId,
+                Category: t.category,
+                SubCategory: t.subCategory,
+                Item: t.itemName,
+                DamagedQty: t.quantity,
+                LossValue: t.totalValue || 0,
+                Reason: t.issuedTo || 'Unknown'
+            }));
+
+        const timestamp = new Date().toISOString().split('T')[0];
+        downloadCSV(damageData, `Damaged_Stock_Report_${schoolName}_${financialYear}_${timestamp}.csv`);
+    };
+
     return (
         <div className="max-w-4xl mx-auto space-y-8">
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
@@ -102,7 +120,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
                     {/* Inventory Report Card */}
                     <div className="border border-gray-200 rounded-xl p-6 hover:shadow-md transition-shadow bg-gray-50 flex flex-col">
@@ -116,7 +134,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                         </div>
                         <h3 className="text-lg font-bold text-gray-800 mb-2">Current Inventory Status</h3>
                         <p className="text-sm text-gray-600 mb-6 flex-grow">
-                            Download a snapshot of current stock levels, including quantities, average values, and total asset worth.
+                            Snapshot of current stock levels, quantities, avg. values, and total asset worth.
                         </p>
                         <div className="mt-auto">
                             <button 
@@ -140,12 +158,36 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                         </div>
                         <h3 className="text-lg font-bold text-gray-800 mb-2">Transaction History</h3>
                         <p className="text-sm text-gray-600 mb-6 flex-grow">
-                            Detailed log of all Purchases (Inward) and Issues (Outward) for the selected financial year.
+                            Detailed log of all Inward (Purchases) and Outward (Issues) transactions.
                         </p>
                         <div className="mt-auto">
                             <button 
                                 onClick={handleDownloadTransactions}
                                 className="w-full flex items-center justify-center gap-2 bg-white border-2 border-amber-600 text-amber-700 py-2.5 rounded-lg hover:bg-amber-50 font-semibold transition-colors"
+                            >
+                                <Download size={18} /> Download
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Damage Report Card */}
+                    <div className="border border-gray-200 rounded-xl p-6 hover:shadow-md transition-shadow bg-gray-50 flex flex-col">
+                        <div className="flex items-start justify-between mb-4">
+                            <div className="bg-red-100 p-3 rounded-lg text-red-600">
+                                <AlertOctagon />
+                            </div>
+                            <span className="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded">
+                                Loss Account
+                            </span>
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-800 mb-2">Damaged Stock Report</h3>
+                        <p className="text-sm text-gray-600 mb-6 flex-grow">
+                            Report of all items written off due to damage, including reasons and lost value.
+                        </p>
+                        <div className="mt-auto">
+                            <button 
+                                onClick={handleDownloadDamageReport}
+                                className="w-full flex items-center justify-center gap-2 bg-white border-2 border-red-600 text-red-700 py-2.5 rounded-lg hover:bg-red-50 font-semibold transition-colors"
                             >
                                 <Download size={18} /> Download
                             </button>

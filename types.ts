@@ -48,6 +48,7 @@ export interface StockRequest {
   subCategory: string;
   itemName: string;
   quantity: number;
+  unit?: string;
   status: RequestStatus;
   createdAt: number;
 }
@@ -59,6 +60,7 @@ export interface AdjustmentRequest {
   subCategory: string;
   itemName: string;
   quantity: number;
+  unit?: string;
   reason: string;
   status: RequestStatus;
   createdAt: number;
@@ -96,6 +98,7 @@ export interface Transaction {
   subCategory: string;
   itemName: string;
   quantity: number;
+  unit?: string; // Added Unit
   unitPrice?: number; // Only for opening/purchase
   totalValue?: number; // Only for opening/purchase
   issuedTo?: string; // Only for issue (Display Name)
@@ -111,6 +114,7 @@ export interface StockSummary {
   subCategory: string;
   itemName: string;
   quantity: number;
+  unit: string;
   avgValue: number;
   totalPurchased: number;
   totalIssued: number;

@@ -121,6 +121,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             subCategory: t.sub_category,
             itemName: t.item_name,
             quantity: Number(t.quantity),
+            unit: t.unit || 'Pcs',
             unitPrice: Number(t.unit_price),
             totalValue: Number(t.total_value),
             issuedTo: t.issued_to,
@@ -156,6 +157,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             subCategory: r.sub_category,
             itemName: r.item_name,
             quantity: Number(r.quantity),
+            unit: r.unit || 'Pcs',
             status: r.status as RequestStatus,
             createdAt: Number(r.created_at)
           }));
@@ -172,6 +174,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 subCategory: r.sub_category,
                 itemName: r.item_name,
                 quantity: Number(r.quantity),
+                unit: r.unit || 'Pcs',
                 reason: r.reason,
                 status: r.status as RequestStatus,
                 createdAt: Number(r.created_at)
@@ -343,6 +346,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const logout = () => setCurrentUser(null);
 
+  // Helper to compute stock on the fly
+  const getComputedStock = (filterSchoolId?: string, fyStart?: string, fyEnd?: string) => {
+    const summaryMap = new Map<string, StockSummary>();
+
+    transactions.forEach(t => {
+      if (filterSchoolId && t.schoolId !== filterSchoolId) return;
+      if (fyEnd && t.date > fyEnd) return;
+
+      // Group by Unit as well so Pcs and Kg don't mix
+      const key = `${t.schoolId}-${t.category}-${t.subCategory}-${t.itemName}-${t.unit || 'Pcs'}`;
+      
+      if (!summaryMap.has(key)) {
+        summaryMap.set(key, {
+          schoolId: t.schoolId,
+          category: t.category,
+          subCategory: t.subCategory,
+          itemName: t.itemName,
+          quantity: 0,
+          unit: t.unit || 'Pcs',
+          avgValue: 0,
+          totalPurchased: 0,
+          totalIssued: 0
+        });
+      }
+
+      const item = summaryMap.get(key)!;
+      const inPeriod = (!fyStart || t.date >= fyStart) && (!fyEnd || t.date <= fyEnd);
+
+      if (t.type === TransactionType.OPENING_STOCK || t.type === TransactionType.PURCHASE) {
+        const totalOldValue = item.quantity * item.avgValue;
+        const totalNewValue = t.quantity * (t.unitPrice || 0);
+        item.quantity += t.quantity;
+        if (inPeriod) item.totalPurchased += t.quantity;
+        if (item.quantity > 0) item.avgValue = (totalOldValue + totalNewValue) / item.quantity;
+      } else if (t.type === TransactionType.ISSUE) {
+        item.quantity -= t.quantity;
+        if (inPeriod) item.totalIssued += t.quantity;
+      } else if (t.type === TransactionType.DAMAGE) {
+        // Damage reduces stock quantity
+        item.quantity -= t.quantity;
+      } else if (t.type === TransactionType.RETURN) {
+        item.quantity += t.quantity;
+        // Reducing totalIssued keeps the Net Issue count correct
+        if (inPeriod) item.totalIssued -= t.quantity; 
+      }
+    });
+
+    return Array.from(summaryMap.values()).filter(i => i.quantity > 0 || i.totalIssued > 0 || i.totalPurchased > 0);
+  };
+
   const addTransaction = async (t: Omit<Transaction, 'id' | 'createdAt'>) => {
     const createdAt = Date.now();
     const tempId = Math.random().toString(36).substr(2, 9);
@@ -365,6 +418,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       sub_category: t.subCategory,
       item_name: t.itemName,
       quantity: t.quantity,
+      unit: t.unit || 'Pcs',
       unit_price: t.unitPrice,
       total_value: t.totalValue,
       issued_to: t.issuedTo,
@@ -396,13 +450,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       sub_category: r.subCategory,
       item_name: r.itemName,
       quantity: r.quantity,
+      unit: r.unit || 'Pcs',
       status: RequestStatus.PENDING,
       created_at: createdAt
     }]).select();
 
     if (error) {
       console.error("Error adding request:", error);
-      // Revert optimistic update if needed, but for now we log
     } else if (data) {
        setRequests(prev => prev.map(item => item.id === tempId ? { ...item, id: data[0].id } : item));
     }
@@ -421,6 +475,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           sub_category: req.subCategory,
           item_name: req.itemName,
           quantity: req.quantity,
+          unit: req.unit || 'Pcs',
           reason: req.reason,
           status: RequestStatus.PENDING,
           created_at: createdAt
@@ -477,13 +532,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const completeReturnRequest = async (issueTxId: string) => {
-      // Find pending request for this issue transaction
       const req = returnRequests.find(r => r.issueTransactionId === issueTxId && r.status === 'PENDING');
       if (!req) return;
-
-      // Optimistic
       setReturnRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'COMPLETED' } : r));
-
       const { error } = await supabase.from('return_requests').update({ status: 'COMPLETED' }).eq('id', req.id);
       if (error) console.error("Error completing return request:", error);
   };
@@ -496,6 +547,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       // If approved, create the damage transaction
       if (status === RequestStatus.APPROVED && request) {
+          // 1. Calculate current average value of the item in that school
+          // We need the latest state, so we call getComputedStock with the specific school
+          const currentStock = getComputedStock(request.schoolId);
+          const stockItem = currentStock.find(i => 
+              i.category === request.category && 
+              i.subCategory === request.subCategory && 
+              i.itemName === request.itemName
+          );
+          
+          const avgValue = stockItem ? stockItem.avgValue : 0;
+          const totalLostValue = avgValue * request.quantity;
+
+          // 2. Add Transaction with calculated loss value
           await addTransaction({
               date: new Date().toISOString().split('T')[0],
               schoolId: request.schoolId,
@@ -503,10 +567,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               category: request.category,
               subCategory: request.subCategory,
               itemName: request.itemName,
-              quantity: request.quantity, // DAMAGE type will handle subtraction logic in stock calculation
-              totalValue: 0,
-              unitPrice: 0,
-              issuedTo: 'DAMAGED / WRITTEN OFF'
+              quantity: request.quantity,
+              unit: request.unit,
+              // Record the cost of damage. This allows Analytics to sum 'DAMAGE' values for a "Loss Account"
+              totalValue: totalLostValue, 
+              unitPrice: avgValue,
+              issuedTo: `DAMAGED: ${request.reason}`
           });
       }
 
@@ -515,99 +581,62 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateRequest = async (id: string, r: Partial<StockRequest>) => {
-    // Optimistic Update
     setRequests(prev => prev.map(req => req.id === id ? { ...req, ...r } : req));
-
     const { error } = await supabase.from('requests').update({
         category: r.category,
         sub_category: r.subCategory,
         item_name: r.itemName,
         quantity: r.quantity
     }).eq('id', id);
-
     if (error) console.error("Error updating request:", error);
   };
 
   const deleteRequest = async (id: string) => {
-    // Optimistic Update
     setRequests(prev => prev.filter(req => req.id !== id));
-    
     const { error } = await supabase.from('requests').delete().eq('id', id);
     if (error) console.error("Error deleting request:", error);
   };
 
   const processRequest = async (requestId: string, status: RequestStatus, transactionDetails?: Omit<Transaction, 'id' | 'createdAt'>) => {
-    // If Approved: Add Transaction THEN Delete Request
-    // If Rejected: Delete Request
-    
     if (status === RequestStatus.APPROVED && transactionDetails) {
         await addTransaction(transactionDetails);
     }
-
-    // Delete request from DB as per requirement
     await deleteRequest(requestId);
   };
 
-  // Used by Admin/HO to reset others passwords
   const updatePassword = async (schoolId: string, role: UserRole, newPass: string) => {
     setUserCredentials(prev => prev.map(c => {
-      // Handle special case for HO self-update in DB list
       const targetId = role === UserRole.HEAD_OFFICE ? 'HEAD_OFFICE' : schoolId;
       const currentId = c.role === UserRole.HEAD_OFFICE ? 'HEAD_OFFICE' : c.schoolId;
-
       if (currentId === targetId && c.role === role) {
         return { ...c, password: newPass };
       }
       return c;
     }));
-
-    // For DB, if it's HO, use 'HEAD_OFFICE' as ID
     const dbSchoolId = role === UserRole.HEAD_OFFICE ? 'HEAD_OFFICE' : schoolId;
-
     const { error } = await supabase.from('school_credentials').upsert({
         school_id: dbSchoolId,
         password: newPass
     }, { onConflict: 'school_id' });
-
     if (error) console.error("Error updating password in DB:", error);
   };
 
   const updateEmployeePassword = async (id: string, schoolId: string, newPass: string) => {
-    // Optimistic Update
-    setEmployees(prev => prev.map(e => 
-      (e.id === id && e.schoolId === schoolId) ? { ...e, password: newPass } : e
-    ));
-
-    const { error } = await supabase
-      .from('employees')
-      .update({ password: newPass })
-      .match({ id: id, school_id: schoolId });
-
+    setEmployees(prev => prev.map(e => (e.id === id && e.schoolId === schoolId) ? { ...e, password: newPass } : e));
+    const { error } = await supabase.from('employees').update({ password: newPass }).match({ id: id, school_id: schoolId });
     if (error) {
         console.error("Error updating employee password:", error);
         alert("Failed to update password in database");
     }
   };
 
-  // Used by Current Logged In User to change their OWN password
   const changeOwnPassword = async (newPass: string) => {
     if (!currentUser) return;
-
     if (currentUser.role === UserRole.USER && currentUser.employeeId && currentUser.schoolId) {
-        // Employee changing own password
         await updateEmployeePassword(currentUser.employeeId, currentUser.schoolId, newPass);
     } else {
-        // HO, Store, or Accountant changing own password
-        // HO uses ID 'HEAD_OFFICE' internally for updates
-        // Store uses HO_STORE_ID
-        // Accountants use schoolId
-        const targetId = currentUser.role === UserRole.HEAD_OFFICE ? 'HEAD_OFFICE' 
-                       : currentUser.role === UserRole.CENTRAL_STORE_MANAGER ? HO_STORE_ID
-                       : currentUser.schoolId;
-        
-        if (targetId) {
-            await updatePassword(targetId, currentUser.role, newPass);
-        }
+        const targetId = currentUser.role === UserRole.HEAD_OFFICE ? 'HEAD_OFFICE' : currentUser.role === UserRole.CENTRAL_STORE_MANAGER ? HO_STORE_ID : currentUser.schoolId;
+        if (targetId) await updatePassword(targetId, currentUser.role, newPass);
     }
   };
 
@@ -622,16 +651,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (error) {
       console.error("Error adding employee:", error);
       setEmployees(prev => prev.filter(e => e.id !== emp.id));
-      alert("Failed to add employee. ID might be duplicate for this school.");
+      alert("Failed to add employee.");
     }
   };
 
   const removeEmployee = async (id: string, schoolId: string) => {
     const prevEmployees = [...employees];
     setEmployees(prev => prev.filter(e => !(e.id === id && e.schoolId === schoolId)));
-    
     const { error } = await supabase.from('employees').delete().match({ id: id, school_id: schoolId });
-
     if (error) {
       console.error("Error deleting employee:", error);
       setEmployees(prevEmployees);
@@ -640,16 +667,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addCategory = async (name: string) => {
-      // Normalize to Title Case or similar if needed, here just raw string
       if (categories.includes(name)) return;
-      
-      // Optimistic
       setCategories(prev => [...prev, name]);
-
       const { error } = await supabase.from('categories').insert([{ name }]);
-      if (error) {
-          console.error("Error adding category:", error);
-      }
+      if (error) console.error("Error adding category:", error);
   };
 
   const updateCategory = async (oldName: string, newName: string) => {
@@ -658,108 +679,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           alert("Category name already exists!");
           return;
       }
-
-      // Optimistic Update for Master List
       setCategories(prev => prev.map(c => c === oldName ? newName : c));
-      
-      // Optimistic Update for Transactions and Requests (so UI reflects immediately)
       setTransactions(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
       setRequests(prev => prev.map(r => r.category === oldName ? { ...r, category: newName } : r));
-
       const { error } = await supabase.from('categories').update({ name: newName }).eq('name', oldName);
-      
       if (error) {
          console.error("Error updating category:", error);
-         alert("Failed to update category in database");
       } else {
-         // Attempt to update references in other tables
-         // Note: Without foreign keys or triggers, we must do this manually.
          await supabase.from('transactions').update({ category: newName }).eq('category', oldName);
          await supabase.from('requests').update({ category: newName }).eq('category', oldName);
       }
   };
 
-  const getComputedStock = (filterSchoolId?: string, fyStart?: string, fyEnd?: string) => {
-    const summaryMap = new Map<string, StockSummary>();
-
-    transactions.forEach(t => {
-      if (filterSchoolId && t.schoolId !== filterSchoolId) return;
-      if (fyEnd && t.date > fyEnd) return;
-
-      const key = `${t.schoolId}-${t.category}-${t.subCategory}-${t.itemName}`;
-      
-      if (!summaryMap.has(key)) {
-        summaryMap.set(key, {
-          schoolId: t.schoolId,
-          category: t.category,
-          subCategory: t.subCategory,
-          itemName: t.itemName,
-          quantity: 0,
-          avgValue: 0,
-          totalPurchased: 0,
-          totalIssued: 0
-        });
-      }
-
-      const item = summaryMap.get(key)!;
-      const inPeriod = (!fyStart || t.date >= fyStart) && (!fyEnd || t.date <= fyEnd);
-
-      if (t.type === TransactionType.OPENING_STOCK || t.type === TransactionType.PURCHASE) {
-        const totalOldValue = item.quantity * item.avgValue;
-        const totalNewValue = t.quantity * (t.unitPrice || 0);
-        item.quantity += t.quantity;
-        if (inPeriod) item.totalPurchased += t.quantity;
-        if (item.quantity > 0) item.avgValue = (totalOldValue + totalNewValue) / item.quantity;
-      } else if (t.type === TransactionType.ISSUE) {
-        item.quantity -= t.quantity;
-        if (inPeriod) item.totalIssued += t.quantity;
-      } else if (t.type === TransactionType.DAMAGE) {
-        // Damage reduces stock quantity but does NOT count as "Issued"
-        item.quantity -= t.quantity;
-      } else if (t.type === TransactionType.RETURN) {
-        item.quantity += t.quantity;
-        // Reducing totalIssued keeps the Net Issue count correct
-        if (inPeriod) item.totalIssued -= t.quantity; 
-      }
-    });
-
-    return Array.from(summaryMap.values()).filter(i => i.quantity > 0 || i.totalIssued > 0 || i.totalPurchased > 0);
-  };
-
   return (
     <AppContext.Provider value={{
-      currentUser,
-      login,
-      logout,
-      transactions,
-      addTransaction,
-      requests,
-      addRequest,
-      updateRequest,
-      deleteRequest,
-      processRequest,
-      adjustmentRequests,
-      addAdjustmentRequest,
-      processAdjustmentRequest,
-      consumptionLogs,
-      addConsumptionLog,
-      returnRequests,
-      addReturnRequest,
-      completeReturnRequest,
-      updatePassword,
-      updateEmployeePassword,
-      changeOwnPassword,
-      getComputedStock,
-      schools: SCHOOLS,
-      userCredentials,
-      employees,
-      addEmployee,
-      removeEmployee,
-      categories,
-      addCategory,
-      updateCategory,
-      isLoading,
-      refreshData
+      currentUser, login, logout, transactions, addTransaction, requests, addRequest, updateRequest, deleteRequest, processRequest,
+      adjustmentRequests, addAdjustmentRequest, processAdjustmentRequest, consumptionLogs, addConsumptionLog, returnRequests, addReturnRequest, completeReturnRequest,
+      updatePassword, updateEmployeePassword, changeOwnPassword, getComputedStock, schools: SCHOOLS, userCredentials, employees, addEmployee, removeEmployee,
+      categories, addCategory, updateCategory, isLoading, refreshData
     }}>
       {children}
     </AppContext.Provider>

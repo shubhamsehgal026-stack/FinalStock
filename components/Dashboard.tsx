@@ -8,17 +8,18 @@ import { AccountantAdjustmentForm, HOAdjustmentManager } from './AdjustmentCompo
 import { EmployeeConsumptionModule, AccountantConsumptionManager } from './ConsumptionComponents';
 import { ReportsModule } from './ReportsModule';
 import { HOStoreModule } from './HOStoreModule';
+import { AnalyticsModule } from './AnalyticsModule';
 import { FINANCIAL_YEARS, getCurrentFinancialYear, HO_STORE_ID } from '../constants';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
-import { LogOut, LayoutDashboard, Shield, Package, School as SchoolIcon, KeyRound, ArrowDownToLine, ArrowUpFromLine, Calendar, Users, Trash2, Building, Bell, Send, FileSpreadsheet, X, ChevronRight, Layers, Lock, RotateCcw, Store, FolderInput, FolderOutput, LayoutGrid, Menu, Settings, Tags, Plus, Pencil, Check, AlertTriangle, ClipboardList } from 'lucide-react';
+import { LogOut, LayoutDashboard, Shield, Package, School as SchoolIcon, KeyRound, ArrowDownToLine, ArrowUpFromLine, Calendar, Users, Trash2, Building, Bell, Send, FileSpreadsheet, X, ChevronRight, Layers, Lock, RotateCcw, Store, FolderInput, FolderOutput, LayoutGrid, Menu, Settings, Tags, Plus, Pencil, Check, AlertTriangle, ClipboardList, BarChart3 } from 'lucide-react';
 
 const inputClass = "mt-1 block w-full rounded-md border-slate-600 bg-slate-800 text-white shadow-sm p-2 border placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none";
 
 export const Dashboard: React.FC = () => {
   const { currentUser, logout, getComputedStock, schools, updatePassword, updateEmployeePassword, changeOwnPassword, employees, addEmployee, removeEmployee, transactions, requests, adjustmentRequests, categories, addCategory, updateCategory } = useAppStore();
-  const [activeView, setActiveView] = useState<'DASH' | 'STOCK' | 'ISSUE' | 'RETURN' | 'ADMIN' | 'EMPLOYEES' | 'REQUESTS' | 'REPORTS' | 'HO_STORE_DASH' | 'HO_STORE_ADD' | 'HO_STORE_ISSUE' | 'SETTINGS' | 'DAMAGE_REPORT' | 'DAMAGE_ADMIN' | 'MY_CONSUMPTION' | 'TRACK_CONSUMPTION'>('DASH');
+  const [activeView, setActiveView] = useState<'DASH' | 'STOCK' | 'ISSUE' | 'RETURN' | 'ADMIN' | 'EMPLOYEES' | 'REQUESTS' | 'REPORTS' | 'HO_STORE_DASH' | 'HO_STORE_ADD' | 'HO_STORE_ISSUE' | 'SETTINGS' | 'DAMAGE_REPORT' | 'DAMAGE_ADMIN' | 'MY_CONSUMPTION' | 'TRACK_CONSUMPTION' | 'ANALYTICS'>('DASH');
   
   // Mobile Menu State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -277,6 +278,12 @@ export const Dashboard: React.FC = () => {
                         <LayoutDashboard size={20} /> Dashboard
                     </button>
                     <button 
+                        onClick={() => handleNavClick('ANALYTICS')}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${activeView === 'ANALYTICS' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                    >
+                        <BarChart3 size={20} /> Analytics & Trends
+                    </button>
+                    <button 
                         onClick={() => handleNavClick('STOCK')}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${activeView === 'STOCK' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
                     >
@@ -366,6 +373,12 @@ export const Dashboard: React.FC = () => {
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeView === 'DASH' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
                     >
                         <LayoutDashboard size={20} /> Dashboard
+                    </button>
+                    <button 
+                        onClick={() => handleNavClick('ANALYTICS')}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeView === 'ANALYTICS' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                    >
+                        <BarChart3 size={20} /> Analytics
                     </button>
                     <button 
                         onClick={() => handleNavClick('STOCK')}
@@ -481,7 +494,7 @@ export const Dashboard: React.FC = () => {
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                     <div className="w-full lg:w-auto">
                         <h1 className="text-xl md:text-2xl font-bold text-gray-800 truncate">
-                            {activeView === 'SETTINGS' ? 'Account Settings' : isHO ? 'Head Office Console' : isStoreManager ? 'Central Store Manager' : `Branch: ${currentUser?.schoolId}`}
+                            {activeView === 'SETTINGS' ? 'Account Settings' : isHO ? 'Head Office Console' : isStoreManager ? 'Central Store Manager' : activeView === 'ANALYTICS' ? 'Analytics Dashboard' : `Branch: ${currentUser?.schoolId}`}
                         </h1>
                         {isHO && (activeView === 'DASH' || activeView === 'STOCK') && (
                             <div className="flex items-center gap-1 mt-2 bg-slate-100 p-1 rounded-lg inline-flex w-full md:w-auto overflow-x-auto no-scrollbar">
@@ -541,6 +554,14 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 w-full">
+            {/* ANALYTICS VIEW */}
+            {activeView === 'ANALYTICS' && (isHO || isAccountant) && (
+                <AnalyticsModule 
+                    role={currentUser?.role || UserRole.ACCOUNTANT} 
+                    currentSchoolId={currentUser?.schoolId}
+                />
+            )}
+
             {/* HO STORE VIEWS */}
             {(isHO || isStoreManager) && activeView === 'HO_STORE_DASH' && (
                 <HOStoreModule viewMode="DASH" />

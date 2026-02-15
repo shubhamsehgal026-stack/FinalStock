@@ -46,7 +46,7 @@ export const InventoryTable: React.FC<Props> = ({ data, showSchoolName }) => {
                 <td className="px-4 py-3 md:px-6 text-right font-medium text-indigo-600 bg-indigo-50/50">{item.totalPurchased}</td>
                 <td className="px-4 py-3 md:px-6 text-right font-medium text-orange-600 bg-orange-50/50">{item.totalIssued}</td>
                 <td className={`px-4 py-3 md:px-6 text-right font-bold ${item.quantity > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {item.quantity}
+                    {item.quantity} <span className="text-xs text-gray-500 font-normal">{item.unit}</span>
                 </td>
                 <td className="px-4 py-3 md:px-6 text-right">₹{item.avgValue.toFixed(2)}</td>
                 <td className="px-4 py-3 md:px-6 text-right font-medium text-gray-900">

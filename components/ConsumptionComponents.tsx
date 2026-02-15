@@ -318,7 +318,7 @@ export const AccountantConsumptionManager: React.FC = () => {
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
                         <input 
                             type="text" 
-                            className="pl-10 w-full rounded-md border border-slate-300 p-2 text-sm"
+                            className="pl-10 w-full rounded-md border border-slate-300 p-2 text-sm bg-white text-gray-900 placeholder-gray-400"
                             placeholder="Search employee or item..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
@@ -444,4 +444,4 @@ export const AccountantConsumptionManager: React.FC = () => {
             )}
         </div>
     );
-};
+}
