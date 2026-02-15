@@ -39,6 +39,18 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
             totalDamagedValue: 0
         };
 
+        // Helper to link Returns back to the Employee
+        // Map<IssueTransactionID, EmployeeLabel>
+        const issueToEmployeeMap = new Map<string, string>();
+
+        // First pass: Index Issue Transactions for Employee mapping
+        transactions.forEach(t => {
+            if (t.type === TransactionType.ISSUE && t.issuedToId) {
+                const empLabel = t.issuedTo || t.issuedToId;
+                issueToEmployeeMap.set(t.id, empLabel);
+            }
+        });
+
         transactions.forEach(t => {
             // Filter logic based on role
             if (role === UserRole.ACCOUNTANT && t.schoolId !== currentSchoolId) return;
@@ -84,6 +96,17 @@ export const AnalyticsModule: React.FC<Props> = ({ role, currentSchoolId }) => {
                 
                 // Adjust Monthly Trend (Net)
                 data.byMonth[monthKey].consumed -= value;
+
+                // Adjust Employee Stats
+                // For Returns, t.issuedToId stores the Original Issue Transaction ID
+                if (t.issuedToId) {
+                    const originalEmployee = issueToEmployeeMap.get(t.issuedToId);
+                    if (originalEmployee) {
+                        if (data.byEmployee[originalEmployee]) {
+                            data.byEmployee[originalEmployee] -= value;
+                        }
+                    }
+                }
 
             } else if (t.type === TransactionType.PURCHASE || t.type === TransactionType.OPENING_STOCK) {
                 // Purchase Expense
