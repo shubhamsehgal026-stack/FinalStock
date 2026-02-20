@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { HO_STORE_CATEGORIES, HO_STORE_ID, SCHOOLS } from '../constants';
 import { TransactionType, Transaction } from '../types';
-import { PlusCircle, Save, History, ArrowUpRight, Package, Store, LayoutDashboard, ChevronLeft, ChevronRight, Layers, FileSpreadsheet, Download, Pencil, Trash2, X, Check, AlertTriangle } from 'lucide-react';
+import { PlusCircle, Save, History, ArrowUpRight, Package, Store, LayoutDashboard, ChevronLeft, ChevronRight, Layers, FileSpreadsheet, Download, Pencil, Trash2, X, Check, AlertTriangle, Search, Filter, RefreshCcw } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import * as XLSX from 'xlsx';
 
@@ -143,6 +143,60 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
         .filter(t => viewMode === 'ADD' ? (t.type === TransactionType.PURCHASE || t.type === TransactionType.OPENING_STOCK) : viewMode === 'ISSUE' ? t.type === TransactionType.ISSUE : true)
         .sort((a, b) => b.createdAt - a.createdAt);
 
+    // Inventory Filters
+    const [invSearch, setInvSearch] = useState('');
+    const [invCategory, setInvCategory] = useState('');
+
+    // Transaction Manager Filters
+    const [txSearch, setTxSearch] = useState('');
+    const [txCategory, setTxCategory] = useState('');
+    const [txSubCategory, setTxSubCategory] = useState('');
+    const [txItemName, setTxItemName] = useState('');
+    const [txBillNumber, setTxBillNumber] = useState('');
+    const [txType, setTxType] = useState<string>('');
+    const [txStartDate, setTxStartDate] = useState('');
+    const [txEndDate, setTxEndDate] = useState('');
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+    // Filtered Inventory
+    const filteredInventory = useMemo(() => {
+        return hoStock.filter(item => {
+            const matchesSearch = item.itemName.toLowerCase().includes(invSearch.toLowerCase()) || 
+                                  item.subCategory.toLowerCase().includes(invSearch.toLowerCase());
+            const matchesCategory = invCategory ? item.category === invCategory : true;
+            return matchesSearch && matchesCategory;
+        });
+    }, [hoStock, invSearch, invCategory]);
+
+    // Filtered Transactions for Manager
+    const filteredTransactions = useMemo(() => {
+        return transactions
+            .filter(t => t.schoolId === HO_STORE_ID)
+            .filter(t => {
+                const matchesSearch = t.itemName.toLowerCase().includes(txSearch.toLowerCase()) || 
+                                      (t.issuedTo && t.issuedTo.toLowerCase().includes(txSearch.toLowerCase()));
+                const matchesCategory = txCategory ? t.category === txCategory : true;
+                const matchesSubCategory = txSubCategory ? t.subCategory.toLowerCase().includes(txSubCategory.toLowerCase()) : true;
+                const matchesItemName = txItemName ? t.itemName.toLowerCase().includes(txItemName.toLowerCase()) : true;
+                const matchesBillNumber = txBillNumber ? (t.billNumber && t.billNumber.toLowerCase().includes(txBillNumber.toLowerCase())) : true;
+                const matchesType = txType ? t.type === txType : true;
+                const matchesStart = txStartDate ? t.date >= txStartDate : true;
+                const matchesEnd = txEndDate ? t.date <= txEndDate : true;
+                return matchesSearch && matchesCategory && matchesSubCategory && matchesItemName && matchesBillNumber && matchesType && matchesStart && matchesEnd;
+            })
+            .sort((a, b) => b.createdAt - a.createdAt);
+    }, [transactions, txSearch, txCategory, txSubCategory, txItemName, txBillNumber, txType, txStartDate, txEndDate]);
+
+    const handleEditTransaction = (t: Transaction) => {
+        setEditingTransaction(t);
+        setIsEditModalOpen(true);
+    };
+
+    const closeEditModal = () => {
+        setEditingTransaction(null);
+        setIsEditModalOpen(false);
+    };
+
     const handleDelete = async (id: string) => {
         if (confirm("Are you sure you want to delete this transaction? This will affect stock levels.")) {
             await deleteTransaction(id);
@@ -150,13 +204,13 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
     };
 
     const handleEdit = (t: Transaction) => {
-        setEditingTransaction(t);
-        // Scroll to top to see form
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Legacy handler, redirect to new one
+        handleEditTransaction(t);
     };
 
     const cancelEdit = () => {
         setEditingTransaction(null);
+        setIsEditModalOpen(false);
     };
 
     const downloadExcel = (data: any[], filename: string) => {
@@ -337,15 +391,14 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
                                         <th className="px-4 py-3 text-right">Qty</th>
                                         {viewMode === 'ADD' && <th className="px-4 py-3 text-right">Cost</th>}
                                         {viewMode === 'ISSUE' && <th className="px-4 py-3">Issued To</th>}
-                                        <th className="px-4 py-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {history.length === 0 ? (
-                                        <tr><td colSpan={6} className="text-center py-8 text-gray-400">No records found</td></tr>
+                                        <tr><td colSpan={5} className="text-center py-8 text-gray-400">No records found</td></tr>
                                     ) : (
                                         history.map(t => (
-                                            <tr key={t.id} className={`border-b hover:bg-gray-50 ${editingTransaction?.id === t.id ? 'bg-blue-50' : ''}`}>
+                                            <tr key={t.id} className="border-b hover:bg-gray-50">
                                                 <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{t.date}</td>
                                                 <td className="px-4 py-3">
                                                     <div className="font-medium text-gray-900">{t.itemName}</div>
@@ -356,24 +409,6 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
                                                 </td>
                                                 {viewMode === 'ADD' && <td className="px-4 py-3 text-right">₹{t.unitPrice}</td>}
                                                 {viewMode === 'ISSUE' && <td className="px-4 py-3 text-gray-800">{t.issuedTo}</td>}
-                                                <td className="px-4 py-3 text-right">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        <button 
-                                                            onClick={() => handleEdit(t)}
-                                                            className="p-1 text-blue-600 hover:bg-blue-100 rounded"
-                                                            title="Edit"
-                                                        >
-                                                            <Pencil size={16} />
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleDelete(t.id)}
-                                                            className="p-1 text-red-600 hover:bg-red-100 rounded"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                </td>
                                             </tr>
                                         ))
                                     )}
@@ -386,13 +421,35 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
 
             {/* CURRENT STOCK SNAPSHOT (Only for HO Store) */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mt-8">
-                 <div className="flex items-center gap-2 mb-6 text-gray-700 border-b pb-4">
-                    <Package size={24} />
-                    <h2 className="text-xl font-bold">Current Store Inventory</h2>
+                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b pb-4">
+                    <div className="flex items-center gap-2 text-gray-700">
+                        <Package size={24} />
+                        <h2 className="text-xl font-bold">Current Store Inventory</h2>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <select 
+                            className="p-2 rounded-md border border-gray-300 text-sm bg-white text-gray-700 outline-none focus:ring-2 focus:ring-brand-500"
+                            value={invCategory}
+                            onChange={(e) => setInvCategory(e.target.value)}
+                        >
+                            <option value="">All Categories</option>
+                            {HO_STORE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <div className="relative w-full md:w-64">
+                            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                            <input 
+                                type="text" 
+                                className="pl-10 w-full rounded-md border border-slate-300 p-2 text-sm bg-white text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-brand-500"
+                                placeholder="Search item..."
+                                value={invSearch}
+                                onChange={(e) => setInvSearch(e.target.value)}
+                            />
+                        </div>
+                    </div>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[600px]">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+                        <thead className="bg-gray-50 text-gray-500 uppercase text-xs sticky top-0 z-10">
                             <tr>
                                 <th className="px-6 py-3">Category</th>
                                 <th className="px-6 py-3">Sub Category / Class</th>
@@ -403,10 +460,10 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                             {hoStock.length === 0 ? (
-                                    <tr><td colSpan={6} className="text-center py-8 text-gray-400">Store is empty</td></tr>
+                             {filteredInventory.length === 0 ? (
+                                    <tr><td colSpan={6} className="text-center py-8 text-gray-400">No items found</td></tr>
                                 ) : (
-                                    hoStock.map((item, idx) => (
+                                    filteredInventory.map((item, idx) => (
                                         <tr key={idx} className="hover:bg-gray-50">
                                             <td className="px-6 py-4 font-bold text-gray-700">{item.category}</td>
                                             <td className="px-6 py-4">
@@ -425,6 +482,178 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
                     </table>
                 </div>
             </div>
+
+            {/* TRANSACTION MANAGER SECTION */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mt-8">
+                <div className="flex flex-col gap-4 mb-6 border-b pb-4">
+                    <div className="flex items-center gap-2 text-gray-700">
+                        <Layers size={24} />
+                        <h2 className="text-xl font-bold">Stock Transaction Register</h2>
+                    </div>
+                    
+                    {/* Filters */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                            <input 
+                                type="text" 
+                                className="pl-10 w-full rounded-md border border-slate-300 p-2 text-sm bg-white text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-brand-500"
+                                placeholder="Search general..."
+                                value={txSearch}
+                                onChange={(e) => setTxSearch(e.target.value)}
+                            />
+                        </div>
+                        <select 
+                            className="p-2 rounded-md border border-gray-300 text-sm bg-white text-gray-700 outline-none focus:ring-2 focus:ring-brand-500"
+                            value={txCategory}
+                            onChange={(e) => setTxCategory(e.target.value)}
+                        >
+                            <option value="">All Categories</option>
+                            {HO_STORE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <input 
+                            type="text" 
+                            className="p-2 rounded-md border border-gray-300 text-sm bg-white text-gray-700 outline-none focus:ring-2 focus:ring-brand-500"
+                            placeholder="Sub Category / Class"
+                            value={txSubCategory}
+                            onChange={(e) => setTxSubCategory(e.target.value)}
+                        />
+                        <input 
+                            type="text" 
+                            className="p-2 rounded-md border border-gray-300 text-sm bg-white text-gray-700 outline-none focus:ring-2 focus:ring-brand-500"
+                            placeholder="Item Name / Title"
+                            value={txItemName}
+                            onChange={(e) => setTxItemName(e.target.value)}
+                        />
+                         <input 
+                            type="text" 
+                            className="p-2 rounded-md border border-gray-300 text-sm bg-white text-gray-700 outline-none focus:ring-2 focus:ring-brand-500"
+                            placeholder="Bill Number"
+                            value={txBillNumber}
+                            onChange={(e) => setTxBillNumber(e.target.value)}
+                        />
+                        <select 
+                            className="p-2 rounded-md border border-gray-300 text-sm bg-white text-gray-700 outline-none focus:ring-2 focus:ring-brand-500"
+                            value={txType}
+                            onChange={(e) => setTxType(e.target.value)}
+                        >
+                            <option value="">All Types</option>
+                            <option value={TransactionType.PURCHASE}>Purchase</option>
+                            <option value={TransactionType.ISSUE}>Issue</option>
+                            <option value={TransactionType.DAMAGE}>Damage</option>
+                            <option value={TransactionType.RETURN}>Return</option>
+                        </select>
+                        <input 
+                            type="date" 
+                            className="p-2 rounded-md border border-gray-300 text-sm bg-white text-gray-700 outline-none focus:ring-2 focus:ring-brand-500"
+                            value={txStartDate}
+                            onChange={(e) => setTxStartDate(e.target.value)}
+                            placeholder="Start Date"
+                        />
+                        <input 
+                            type="date" 
+                            className="p-2 rounded-md border border-gray-300 text-sm bg-white text-gray-700 outline-none focus:ring-2 focus:ring-brand-500"
+                            value={txEndDate}
+                            onChange={(e) => setTxEndDate(e.target.value)}
+                            placeholder="End Date"
+                        />
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto max-h-[600px]">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-50 text-gray-500 uppercase text-xs sticky top-0 z-10">
+                            <tr>
+                                <th className="px-4 py-3">Date</th>
+                                <th className="px-4 py-3">Type</th>
+                                <th className="px-4 py-3">Item Details</th>
+                                <th className="px-4 py-3 text-right">Qty</th>
+                                <th className="px-4 py-3 text-right">Unit Price</th>
+                                <th className="px-4 py-3">Issued To / Remarks</th>
+                                <th className="px-4 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                             {filteredTransactions.length === 0 ? (
+                                    <tr><td colSpan={7} className="text-center py-8 text-gray-400">No transactions found</td></tr>
+                                ) : (
+                                    filteredTransactions.map((t) => (
+                                        <tr key={t.id} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3 whitespace-nowrap text-gray-600">{t.date}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                                    t.type === TransactionType.PURCHASE ? 'bg-green-100 text-green-800' :
+                                                    t.type === TransactionType.ISSUE ? 'bg-amber-100 text-amber-800' :
+                                                    t.type === TransactionType.DAMAGE ? 'bg-red-100 text-red-800' :
+                                                    'bg-blue-100 text-blue-800'
+                                                }`}>
+                                                    {t.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="font-medium text-gray-900">{t.itemName}</div>
+                                                <div className="text-xs text-gray-500">{t.category} • {t.subCategory}</div>
+                                            </td>
+                                            <td className={`px-4 py-3 text-right font-bold ${
+                                                t.type === TransactionType.PURCHASE || t.type === TransactionType.RETURN ? 'text-green-600' : 'text-amber-600'
+                                            }`}>
+                                                {t.type === TransactionType.PURCHASE || t.type === TransactionType.RETURN ? '+' : '-'}{t.quantity}
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-gray-600">₹{t.unitPrice}</td>
+                                            <td className="px-4 py-3 text-gray-600 truncate max-w-[150px]" title={t.issuedTo}>
+                                                {t.issuedTo || '-'}
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button 
+                                                        onClick={() => handleEditTransaction(t)}
+                                                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Pencil size={16} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDelete(t.id)}
+                                                        className="p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* EDIT MODAL */}
+            {isEditModalOpen && editingTransaction && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="p-6">
+                            {editingTransaction.type === TransactionType.ISSUE ? (
+                                <HOIssueStockForm 
+                                    addTransaction={addTransaction} 
+                                    updateTransaction={updateTransaction}
+                                    hoStock={hoStock} 
+                                    editingTransaction={editingTransaction}
+                                    cancelEdit={closeEditModal}
+                                />
+                            ) : (
+                                <HOAddStockForm 
+                                    addTransaction={addTransaction} 
+                                    updateTransaction={updateTransaction}
+                                    editingTransaction={editingTransaction}
+                                    cancelEdit={closeEditModal}
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
