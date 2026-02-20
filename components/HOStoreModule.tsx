@@ -2,8 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { HO_STORE_CATEGORIES, HO_STORE_ID, SCHOOLS } from '../constants';
 import { TransactionType } from '../types';
-import { PlusCircle, Save, History, ArrowUpRight, Package, Store, LayoutDashboard, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { PlusCircle, Save, History, ArrowUpRight, Package, Store, LayoutDashboard, ChevronLeft, ChevronRight, Layers, FileSpreadsheet, Download } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
+import * as XLSX from 'xlsx';
 
 const inputClass = "mt-1 block w-full rounded-md border-slate-600 bg-slate-800 text-white shadow-sm p-2 border placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none";
 
@@ -114,7 +115,7 @@ const getCurrentSession = () => {
 };
 
 interface HOStoreProps {
-    viewMode: 'ADD' | 'ISSUE' | 'DASH';
+    viewMode: 'ADD' | 'ISSUE' | 'DASH' | 'REPORTS';
 }
 
 export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
@@ -139,6 +140,52 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
         .filter(t => viewMode === 'ADD' ? (t.type === TransactionType.PURCHASE || t.type === TransactionType.OPENING_STOCK) : viewMode === 'ISSUE' ? t.type === TransactionType.ISSUE : true)
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, 20);
+
+    const downloadExcel = (data: any[], filename: string) => {
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
+        XLSX.writeFile(workbook, filename);
+    };
+
+    const handleDownloadInventory = () => {
+        const reportData = hoStock.map(item => ({
+            Category: item.category,
+            SubCategory: item.subCategory,
+            ItemName: item.itemName,
+            QuantityAvailable: item.quantity,
+            AverageValue: item.avgValue.toFixed(2),
+            TotalAssetValue: (item.quantity * item.avgValue).toFixed(2),
+            TotalPurchasedInFY: item.totalPurchased,
+            TotalIssuedInFY: item.totalIssued
+        }));
+        
+        const timestamp = new Date().toISOString().split('T')[0];
+        downloadExcel(reportData, `HO_Store_Inventory_${timestamp}.xlsx`);
+    };
+
+    const handleDownloadTransactions = () => {
+        const allHoTransactions = transactions
+            .filter(t => t.schoolId === HO_STORE_ID)
+            .sort((a, b) => b.createdAt - a.createdAt);
+
+        const reportData = allHoTransactions.map(t => ({
+            Date: t.date,
+            TransactionID: t.id,
+            Type: t.type,
+            Category: t.category,
+            SubCategory: t.subCategory,
+            Item: t.itemName,
+            Quantity: t.quantity,
+            UnitPrice: t.unitPrice || 0,
+            TotalValue: t.totalValue || 0,
+            IssuedTo: t.issuedTo || '-',
+            IssuedToID: t.issuedToId || '-'
+        }));
+
+        const timestamp = new Date().toISOString().split('T')[0];
+        downloadExcel(reportData, `HO_Store_Transactions_${timestamp}.xlsx`);
+    };
 
     return (
         <div className="space-y-6">
@@ -177,6 +224,59 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
                                 </BarChart>
                             </ResponsiveContainer>
                          </div>
+                    </div>
+                </div>
+            )}
+
+            {/* REPORTS VIEW */}
+            {viewMode === 'REPORTS' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Inventory Report Card */}
+                    <div className="border border-gray-200 rounded-xl p-6 hover:shadow-md transition-shadow bg-gray-50 flex flex-col">
+                        <div className="flex items-start justify-between mb-4">
+                            <div className="bg-blue-100 p-3 rounded-lg text-blue-600">
+                                <Package size={24} />
+                            </div>
+                            <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">
+                                {hoStock.length} Items
+                            </span>
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-800 mb-2">Current Inventory Report</h3>
+                        <p className="text-sm text-gray-600 mb-6 flex-grow">
+                            Download complete list of items currently in the Central Store with quantities and values.
+                        </p>
+                        <div className="mt-auto">
+                            <button 
+                                onClick={handleDownloadInventory}
+                                className="w-full flex items-center justify-center gap-2 bg-white border-2 border-blue-600 text-blue-700 py-2.5 rounded-lg hover:bg-blue-50 font-semibold transition-colors"
+                            >
+                                <FileSpreadsheet size={18} /> Download Excel
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Transaction Report Card */}
+                    <div className="border border-gray-200 rounded-xl p-6 hover:shadow-md transition-shadow bg-gray-50 flex flex-col">
+                        <div className="flex items-start justify-between mb-4">
+                            <div className="bg-amber-100 p-3 rounded-lg text-amber-600">
+                                <History size={24} />
+                            </div>
+                            <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded">
+                                All Records
+                            </span>
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-800 mb-2">Transaction History Report</h3>
+                        <p className="text-sm text-gray-600 mb-6 flex-grow">
+                            Download detailed log of all Purchases and Issues made from the Central Store.
+                        </p>
+                        <div className="mt-auto">
+                            <button 
+                                onClick={handleDownloadTransactions}
+                                className="w-full flex items-center justify-center gap-2 bg-white border-2 border-amber-600 text-amber-700 py-2.5 rounded-lg hover:bg-amber-50 font-semibold transition-colors"
+                            >
+                                <FileSpreadsheet size={18} /> Download Excel
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

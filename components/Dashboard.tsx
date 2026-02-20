@@ -19,7 +19,7 @@ const inputClass = "mt-1 block w-full rounded-md border-slate-600 bg-slate-800 t
 
 export const Dashboard: React.FC = () => {
   const { currentUser, logout, getComputedStock, schools, updatePassword, updateEmployeePassword, changeOwnPassword, employees, addEmployee, removeEmployee, transactions, requests, adjustmentRequests, categories, addCategory, updateCategory } = useAppStore();
-  const [activeView, setActiveView] = useState<'DASH' | 'STOCK' | 'ISSUE' | 'RETURN' | 'ADMIN' | 'EMPLOYEES' | 'REQUESTS' | 'REPORTS' | 'HO_STORE_DASH' | 'HO_STORE_ADD' | 'HO_STORE_ISSUE' | 'SETTINGS' | 'DAMAGE_REPORT' | 'DAMAGE_ADMIN' | 'MY_CONSUMPTION' | 'TRACK_CONSUMPTION' | 'ANALYTICS'>('DASH');
+  const [activeView, setActiveView] = useState<'DASH' | 'STOCK' | 'ISSUE' | 'RETURN' | 'ADMIN' | 'EMPLOYEES' | 'REQUESTS' | 'REPORTS' | 'HO_STORE_DASH' | 'HO_STORE_ADD' | 'HO_STORE_ISSUE' | 'HO_STORE_REPORTS' | 'SETTINGS' | 'DAMAGE_REPORT' | 'DAMAGE_ADMIN' | 'MY_CONSUMPTION' | 'TRACK_CONSUMPTION' | 'ANALYTICS'>('DASH');
   
   // Mobile Menu State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -340,6 +340,12 @@ export const Dashboard: React.FC = () => {
                     >
                         <FolderOutput size={20} /> Issue Stock
                     </button>
+                    <button 
+                        onClick={() => handleNavClick('HO_STORE_REPORTS')}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${activeView === 'HO_STORE_REPORTS' ? 'bg-brand-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                    >
+                        <FileSpreadsheet size={20} /> Store Reports
+                    </button>
                 </div>
             )}
 
@@ -573,6 +579,10 @@ export const Dashboard: React.FC = () => {
 
             {(isHO || isStoreManager) && activeView === 'HO_STORE_ISSUE' && (
                 <HOStoreModule viewMode="ISSUE" />
+            )}
+
+            {(isHO || isStoreManager) && activeView === 'HO_STORE_REPORTS' && (
+                <HOStoreModule viewMode="REPORTS" />
             )}
 
             {/* EMPLOYEE CONSUMPTION VIEW */}
