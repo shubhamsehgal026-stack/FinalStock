@@ -29,6 +29,9 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
     billAttachment: ''
   });
 
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState<any>(null);
+
   // Update default category if categories load later
   useEffect(() => {
     if (!formData.category && categories.length > 0) {
@@ -65,7 +68,7 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
         return;
     }
 
-    addTransaction({
+    setPendingFormData({
       date: formData.date,
       schoolId: currentUser.schoolId,
       type: formData.type,
@@ -79,17 +82,30 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
       billNumber: formData.type === TransactionType.PURCHASE ? formData.billNumber : undefined,
       billAttachment: formData.type === TransactionType.PURCHASE ? formData.billAttachment : undefined
     });
+    setShowConfirmation(true);
+  };
 
-    alert("Stock Added Successfully!");
-    setFormData({ 
-        ...formData, 
-        itemName: '', 
-        quantity: '', 
-        unitPrice: '', 
-        subCategory: '', 
-        billNumber: '',
-        billAttachment: ''
-    });
+  const handleConfirm = () => {
+      if (pendingFormData) {
+          addTransaction(pendingFormData);
+          alert("Stock Added Successfully!");
+          setFormData({ 
+              ...formData, 
+              itemName: '', 
+              quantity: '', 
+              unitPrice: '', 
+              subCategory: '', 
+              billNumber: '',
+              billAttachment: ''
+          });
+          setShowConfirmation(false);
+          setPendingFormData(null);
+      }
+  };
+
+  const handleCancelConfirmation = () => {
+      setShowConfirmation(false);
+      setPendingFormData(null);
   };
 
   const recentHistory = transactions
@@ -258,6 +274,71 @@ export const AddStockForm: React.FC<ActionProps> = ({ filterStartDate, filterEnd
           </div>
         </form>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmation && pendingFormData && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <div className="bg-brand-600 px-6 py-4 flex items-center justify-between">
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                          <AlertTriangle size={20} className="text-yellow-300" /> Confirm Stock Entry
+                      </h3>
+                      <button onClick={handleCancelConfirmation} className="text-white/80 hover:text-white transition-colors">
+                          <X size={20} />
+                      </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <p className="text-gray-600 text-sm">Please review the details before adding to inventory.</p>
+                      
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-100 text-sm">
+                          <div className="flex justify-between">
+                              <span className="text-gray-500">Date:</span>
+                              <span className="font-medium text-gray-900">{pendingFormData.date}</span>
+                          </div>
+                          <div className="flex justify-between">
+                              <span className="text-gray-500">Type:</span>
+                              <span className="font-medium text-gray-900">{pendingFormData.type}</span>
+                          </div>
+                          <div className="flex justify-between">
+                              <span className="text-gray-500">Item:</span>
+                              <span className="font-medium text-gray-900 text-right">{pendingFormData.itemName}</span>
+                          </div>
+                          <div className="flex justify-between">
+                              <span className="text-gray-500">Category:</span>
+                              <span className="font-medium text-gray-900">{pendingFormData.category} • {pendingFormData.subCategory}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-gray-200 pt-2 mt-2">
+                              <span className="text-gray-500">Quantity:</span>
+                              <span className="font-bold text-green-600 text-lg">+{pendingFormData.quantity} {pendingFormData.unit}</span>
+                          </div>
+                          <div className="flex justify-between">
+                              <span className="text-gray-500">Unit Cost:</span>
+                              <span className="font-medium text-gray-900">₹{pendingFormData.unitPrice}</span>
+                          </div>
+                          <div className="flex justify-between font-bold text-gray-900 pt-1">
+                              <span>Total Value:</span>
+                              <span>₹{pendingFormData.totalValue.toLocaleString()}</span>
+                          </div>
+                      </div>
+
+                      <div className="flex gap-3 pt-2">
+                          <button 
+                              onClick={handleCancelConfirmation}
+                              className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors"
+                          >
+                              Edit
+                          </button>
+                          <button 
+                              onClick={handleConfirm}
+                              className="flex-1 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-bold shadow-lg shadow-brand-200 transition-all transform active:scale-95"
+                          >
+                              Confirm & Add
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full">
         <div className="flex items-center gap-2 mb-6 text-gray-700 border-b pb-4">
