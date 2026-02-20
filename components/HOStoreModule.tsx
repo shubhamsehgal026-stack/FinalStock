@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { HO_STORE_CATEGORIES, HO_STORE_ID, SCHOOLS } from '../constants';
-import { TransactionType } from '../types';
-import { PlusCircle, Save, History, ArrowUpRight, Package, Store, LayoutDashboard, ChevronLeft, ChevronRight, Layers, FileSpreadsheet, Download } from 'lucide-react';
+import { TransactionType, Transaction } from '../types';
+import { PlusCircle, Save, History, ArrowUpRight, Package, Store, LayoutDashboard, ChevronLeft, ChevronRight, Layers, FileSpreadsheet, Download, Pencil, Trash2, X, Check } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import * as XLSX from 'xlsx';
 
@@ -119,8 +119,11 @@ interface HOStoreProps {
 }
 
 export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
-    const { addTransaction, getComputedStock, transactions } = useAppStore();
+    const { addTransaction, updateTransaction, deleteTransaction, getComputedStock, transactions } = useAppStore();
     
+    // Edit State
+    const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
     // Get Current Stock for HO Store
     const hoStock = getComputedStock(HO_STORE_ID);
 
@@ -138,8 +141,23 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
     const history = transactions
         .filter(t => t.schoolId === HO_STORE_ID)
         .filter(t => viewMode === 'ADD' ? (t.type === TransactionType.PURCHASE || t.type === TransactionType.OPENING_STOCK) : viewMode === 'ISSUE' ? t.type === TransactionType.ISSUE : true)
-        .sort((a, b) => b.createdAt - a.createdAt)
-        .slice(0, 20);
+        .sort((a, b) => b.createdAt - a.createdAt);
+
+    const handleDelete = async (id: string) => {
+        if (confirm("Are you sure you want to delete this transaction? This will affect stock levels.")) {
+            await deleteTransaction(id);
+        }
+    };
+
+    const handleEdit = (t: Transaction) => {
+        setEditingTransaction(t);
+        // Scroll to top to see form
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const cancelEdit = () => {
+        setEditingTransaction(null);
+    };
 
     const downloadExcel = (data: any[], filename: string) => {
         const worksheet = XLSX.utils.json_to_sheet(data);
@@ -287,19 +305,30 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
                     {/* ACTION FORM */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 order-last lg:order-first">
                         {viewMode === 'ADD' ? (
-                            <HOAddStockForm addTransaction={addTransaction} />
+                            <HOAddStockForm 
+                                addTransaction={addTransaction} 
+                                updateTransaction={updateTransaction}
+                                editingTransaction={editingTransaction}
+                                cancelEdit={cancelEdit}
+                            />
                         ) : (
-                            <HOIssueStockForm addTransaction={addTransaction} hoStock={hoStock} />
+                            <HOIssueStockForm 
+                                addTransaction={addTransaction} 
+                                updateTransaction={updateTransaction}
+                                hoStock={hoStock} 
+                                editingTransaction={editingTransaction}
+                                cancelEdit={cancelEdit}
+                            />
                         )}
                     </div>
 
                     {/* HISTORY TABLE */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-full max-h-[800px]">
                         <div className="flex items-center gap-2 mb-6 text-gray-700 border-b pb-4">
                             <History size={24} />
                             <h2 className="text-xl font-bold">Recent {viewMode === 'ADD' ? 'Additions' : 'Issues'}</h2>
                         </div>
-                        <div className="flex-1 overflow-auto">
+                        <div className="flex-1 overflow-auto min-h-0">
                             <table className="w-full text-sm text-left">
                                 <thead className="text-xs text-gray-500 uppercase bg-gray-50">
                                     <tr>
@@ -308,14 +337,15 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
                                         <th className="px-4 py-3 text-right">Qty</th>
                                         {viewMode === 'ADD' && <th className="px-4 py-3 text-right">Cost</th>}
                                         {viewMode === 'ISSUE' && <th className="px-4 py-3">Issued To</th>}
+                                        <th className="px-4 py-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {history.length === 0 ? (
-                                        <tr><td colSpan={5} className="text-center py-8 text-gray-400">No records found</td></tr>
+                                        <tr><td colSpan={6} className="text-center py-8 text-gray-400">No records found</td></tr>
                                     ) : (
                                         history.map(t => (
-                                            <tr key={t.id} className="border-b hover:bg-gray-50">
+                                            <tr key={t.id} className={`border-b hover:bg-gray-50 ${editingTransaction?.id === t.id ? 'bg-blue-50' : ''}`}>
                                                 <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{t.date}</td>
                                                 <td className="px-4 py-3">
                                                     <div className="font-medium text-gray-900">{t.itemName}</div>
@@ -326,6 +356,24 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
                                                 </td>
                                                 {viewMode === 'ADD' && <td className="px-4 py-3 text-right">₹{t.unitPrice}</td>}
                                                 {viewMode === 'ISSUE' && <td className="px-4 py-3 text-gray-800">{t.issuedTo}</td>}
+                                                <td className="px-4 py-3 text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button 
+                                                            onClick={() => handleEdit(t)}
+                                                            className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                                                            title="Edit"
+                                                        >
+                                                            <Pencil size={16} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDelete(t.id)}
+                                                            className="p-1 text-red-600 hover:bg-red-100 rounded"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))
                                     )}
@@ -381,7 +429,17 @@ export const HOStoreModule: React.FC<HOStoreProps> = ({ viewMode }) => {
     );
 };
 
-const HOAddStockForm = ({ addTransaction }: { addTransaction: any }) => {
+const HOAddStockForm = ({ 
+    addTransaction, 
+    updateTransaction, 
+    editingTransaction, 
+    cancelEdit 
+}: { 
+    addTransaction: any, 
+    updateTransaction: any, 
+    editingTransaction: Transaction | null, 
+    cancelEdit: () => void 
+}) => {
     const [formData, setFormData] = useState({
         date: new Date().toISOString().split('T')[0],
         category: HO_STORE_CATEGORIES[0],
@@ -397,6 +455,33 @@ const HOAddStockForm = ({ addTransaction }: { addTransaction: any }) => {
     const [selectedClass, setSelectedClass] = useState('');
 
     const isBooks = formData.category === 'Books';
+
+    // Populate form when editing
+    useEffect(() => {
+        if (editingTransaction) {
+            setFormData({
+                date: editingTransaction.date,
+                category: editingTransaction.category,
+                subCategory: editingTransaction.subCategory,
+                itemName: editingTransaction.itemName,
+                quantity: editingTransaction.quantity,
+                cost: editingTransaction.unitPrice || 0
+            });
+            // Try to extract metadata for books if possible, or just leave as custom
+            // For simplicity, we might treat edited items as custom text inputs if they don't match strict structure
+            // But here we just populate the basic fields.
+        } else {
+            // Reset
+            setFormData({
+                date: new Date().toISOString().split('T')[0],
+                category: HO_STORE_CATEGORIES[0],
+                subCategory: '',
+                itemName: '',
+                quantity: 1,
+                cost: 0
+            });
+        }
+    }, [editingTransaction]);
 
     // Update selected class when tier changes to avoid invalid states
     useEffect(() => {
@@ -426,38 +511,70 @@ const HOAddStockForm = ({ addTransaction }: { addTransaction: any }) => {
         setSessionYear(`${newStart}-${newStart + 1}`);
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         let finalSubCategory = formData.subCategory;
         let finalItemName = formData.itemName;
         
-        if (isBooks) {
+        // Only apply special naming logic for NEW items or if user is manually changing books
+        // If editing, we preserve the name unless user changes it.
+        // For simplicity in this edit mode, we assume user might be correcting a mistake.
+        if (isBooks && !editingTransaction) {
              finalSubCategory = selectedClass;
              // Append Tier and Year to Item Name for Uniqueness
              finalItemName = `${formData.itemName} [${selectedTier}] [${sessionYear}]`;
+        } else if (isBooks && editingTransaction) {
+            // If editing a book, we might want to keep the name as is if they didn't change the dropdowns
+            // But if they are using the form, they might expect the generation logic.
+            // For now, let's allow direct editing of the name field if it's populated.
+            // But the UI shows dropdowns for books.
+            // If we are in edit mode, we might want to switch to "Custom" mode or pre-fill the dropdowns if they match.
+            // To keep it simple: If editing, we just take the values as is from the inputs.
+            // We'll disable the complex generator for edit mode to avoid overwriting with wrong format.
         }
 
-        addTransaction({
-            date: formData.date,
-            schoolId: HO_STORE_ID,
-            type: TransactionType.PURCHASE,
-            category: formData.category,
-            subCategory: finalSubCategory,
-            itemName: finalItemName,
-            quantity: Number(formData.quantity),
-            unitPrice: Number(formData.cost),
-            totalValue: Number(formData.quantity) * Number(formData.cost)
-        });
-        alert("Stock Added to HO Store!");
-        setFormData({ ...formData, itemName: '', quantity: 1, cost: 0, subCategory: '' });
+        if (editingTransaction) {
+            await updateTransaction(editingTransaction.id, {
+                date: formData.date,
+                category: formData.category,
+                subCategory: finalSubCategory,
+                itemName: finalItemName,
+                quantity: Number(formData.quantity),
+                unitPrice: Number(formData.cost),
+                totalValue: Number(formData.quantity) * Number(formData.cost)
+            });
+            alert("Transaction Updated!");
+            cancelEdit();
+        } else {
+            addTransaction({
+                date: formData.date,
+                schoolId: HO_STORE_ID,
+                type: TransactionType.PURCHASE,
+                category: formData.category,
+                subCategory: finalSubCategory,
+                itemName: finalItemName,
+                quantity: Number(formData.quantity),
+                unitPrice: Number(formData.cost),
+                totalValue: Number(formData.quantity) * Number(formData.cost)
+            });
+            alert("Stock Added to HO Store!");
+            setFormData({ ...formData, itemName: '', quantity: 1, cost: 0, subCategory: '' });
+        }
     };
 
     return (
         <div>
-            <div className="flex items-center gap-2 mb-6 text-brand-700">
-                <PlusCircle size={24} />
-                <h2 className="text-xl font-bold">Add Stock</h2>
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2 text-brand-700">
+                    {editingTransaction ? <Pencil size={24} /> : <PlusCircle size={24} />}
+                    <h2 className="text-xl font-bold">{editingTransaction ? 'Edit Stock Entry' : 'Add Stock'}</h2>
+                </div>
+                {editingTransaction && (
+                    <button onClick={cancelEdit} className="text-sm text-red-600 hover:underline flex items-center gap-1">
+                        <X size={16} /> Cancel Edit
+                    </button>
+                )}
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -473,7 +590,7 @@ const HOAddStockForm = ({ addTransaction }: { addTransaction: any }) => {
                     </select>
                 </div>
 
-                {isBooks ? (
+                {isBooks && !editingTransaction ? (
                     <>
                         <div className="space-y-2">
                              <label className="block text-sm font-medium text-gray-700">Book Tier / Section</label>
@@ -561,15 +678,28 @@ const HOAddStockForm = ({ addTransaction }: { addTransaction: any }) => {
                         <input type="number" required min="0" className={inputClass} value={formData.cost} onChange={e => setFormData({...formData, cost: Number(e.target.value)})} />
                     </div>
                 </div>
-                <button type="submit" className="w-full bg-brand-600 text-white py-2 rounded-lg hover:bg-brand-700 flex items-center justify-center gap-2 mt-4">
-                    <Save size={18} /> Add to Store
+                <button type="submit" className={`w-full text-white py-2 rounded-lg flex items-center justify-center gap-2 mt-4 ${editingTransaction ? 'bg-blue-600 hover:bg-blue-700' : 'bg-brand-600 hover:bg-brand-700'}`}>
+                    {editingTransaction ? <Check size={18} /> : <Save size={18} />} 
+                    {editingTransaction ? 'Update Transaction' : 'Add to Store'}
                 </button>
             </form>
         </div>
     );
 };
 
-const HOIssueStockForm = ({ addTransaction, hoStock }: { addTransaction: any, hoStock: any[] }) => {
+const HOIssueStockForm = ({ 
+    addTransaction, 
+    updateTransaction, 
+    hoStock, 
+    editingTransaction, 
+    cancelEdit 
+}: { 
+    addTransaction: any, 
+    updateTransaction: any, 
+    hoStock: any[], 
+    editingTransaction: Transaction | null, 
+    cancelEdit: () => void 
+}) => {
     const [formData, setFormData] = useState({
         date: new Date().toISOString().split('T')[0],
         category: '',
@@ -584,14 +714,39 @@ const HOIssueStockForm = ({ addTransaction, hoStock }: { addTransaction: any, ho
     const [selectedClass, setSelectedClass] = useState('');
     const [sessionYear, setSessionYear] = useState(getCurrentSession());
 
+    // Populate form when editing
+    useEffect(() => {
+        if (editingTransaction) {
+            setFormData({
+                date: editingTransaction.date,
+                category: editingTransaction.category,
+                subCategory: editingTransaction.subCategory,
+                itemName: editingTransaction.itemName,
+                quantity: editingTransaction.quantity,
+                issuedTo: editingTransaction.issuedTo || 'GBD'
+            });
+        } else {
+            setFormData({
+                date: new Date().toISOString().split('T')[0],
+                category: '',
+                subCategory: '',
+                itemName: '',
+                quantity: 1,
+                issuedTo: 'GBD'
+            });
+        }
+    }, [editingTransaction]);
+
     // Initialize class when tier changes
     useEffect(() => {
         const classes = TIER_CONFIG[selectedTier].classes;
         if (!classes.includes(selectedClass)) {
             setSelectedClass(classes[0]);
         }
-        // Reset item selection when filter criteria change
-        setFormData(prev => ({...prev, itemName: '', subCategory: ''}));
+        // Reset item selection when filter criteria change, ONLY if not editing
+        if (!editingTransaction) {
+            setFormData(prev => ({...prev, itemName: '', subCategory: ''}));
+        }
     }, [selectedTier]);
 
     // Derived dropdown options
@@ -620,36 +775,59 @@ const HOIssueStockForm = ({ addTransaction, hoStock }: { addTransaction: any, ho
         const newStart = start + direction;
         if (newStart < 2022 || newStart > 2050) return;
         setSessionYear(`${newStart}-${newStart + 1}`);
-        setFormData(prev => ({...prev, itemName: '', subCategory: ''}));
+        if (!editingTransaction) {
+            setFormData(prev => ({...prev, itemName: '', subCategory: ''}));
+        }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.itemName) {
             alert("Please select an item");
             return;
         }
         
+        // Validation: Check stock availability (skip if editing and reducing quantity or keeping same)
+        // If editing, we need to account for the original quantity being returned to stock logically before checking
         const currentItem = hoStock.find((s: any) => s.category === formData.category && s.subCategory === formData.subCategory && s.itemName === formData.itemName);
+        
+        let availableQty = currentItem ? currentItem.quantity : 0;
+        if (editingTransaction && editingTransaction.itemName === formData.itemName) {
+            availableQty += editingTransaction.quantity; // Add back original quantity for validation
+        }
 
-        if (!currentItem || currentItem.quantity < formData.quantity) {
-            alert("Insufficient stock in HO Store!");
+        if (availableQty < formData.quantity) {
+            alert(`Insufficient stock! Available: ${availableQty}`);
             return;
         }
 
-        addTransaction({
-            date: formData.date,
-            schoolId: HO_STORE_ID,
-            type: TransactionType.ISSUE,
-            category: formData.category,
-            subCategory: formData.subCategory,
-            itemName: formData.itemName,
-            quantity: Number(formData.quantity),
-            issuedTo: formData.issuedTo,
-            issuedToId: 'HO_EXTERNAL' 
-        });
-        alert("Stock Issued from HO Store!");
-        setFormData({ ...formData, quantity: 1, issuedTo: 'GBD', itemName: '', subCategory: '' }); 
+        if (editingTransaction) {
+            await updateTransaction(editingTransaction.id, {
+                date: formData.date,
+                category: formData.category,
+                subCategory: formData.subCategory,
+                itemName: formData.itemName,
+                quantity: Number(formData.quantity),
+                issuedTo: formData.issuedTo,
+                issuedToId: 'HO_EXTERNAL' 
+            });
+            alert("Issue Record Updated!");
+            cancelEdit();
+        } else {
+            addTransaction({
+                date: formData.date,
+                schoolId: HO_STORE_ID,
+                type: TransactionType.ISSUE,
+                category: formData.category,
+                subCategory: formData.subCategory,
+                itemName: formData.itemName,
+                quantity: Number(formData.quantity),
+                issuedTo: formData.issuedTo,
+                issuedToId: 'HO_EXTERNAL' 
+            });
+            alert("Stock Issued from HO Store!");
+            setFormData({ ...formData, quantity: 1, issuedTo: 'GBD', itemName: '', subCategory: '' }); 
+        }
     };
 
     const handleItemChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -667,9 +845,16 @@ const HOIssueStockForm = ({ addTransaction, hoStock }: { addTransaction: any, ho
 
     return (
         <div>
-             <div className="flex items-center gap-2 mb-6 text-amber-600">
-                <ArrowUpRight size={24} />
-                <h2 className="text-xl font-bold">Issue Stock</h2>
+             <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2 text-amber-600">
+                    {editingTransaction ? <Pencil size={24} /> : <ArrowUpRight size={24} />}
+                    <h2 className="text-xl font-bold">{editingTransaction ? 'Edit Issue Record' : 'Issue Stock'}</h2>
+                </div>
+                {editingTransaction && (
+                    <button onClick={cancelEdit} className="text-sm text-red-600 hover:underline flex items-center gap-1">
+                        <X size={16} /> Cancel Edit
+                    </button>
+                )}
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -779,8 +964,9 @@ const HOIssueStockForm = ({ addTransaction, hoStock }: { addTransaction: any, ho
                         )}
                     </div>
                 </div>
-                <button type="submit" className="w-full bg-amber-600 text-white py-2 rounded-lg hover:bg-amber-700 flex items-center justify-center gap-2 mt-4">
-                    <ArrowUpRight size={18} /> Issue Stock
+                <button type="submit" className={`w-full text-white py-2 rounded-lg flex items-center justify-center gap-2 mt-4 ${editingTransaction ? 'bg-blue-600 hover:bg-blue-700' : 'bg-amber-600 hover:bg-amber-700'}`}>
+                    {editingTransaction ? <Check size={18} /> : <ArrowUpRight size={18} />} 
+                    {editingTransaction ? 'Update Issue Record' : 'Issue Stock'}
                 </button>
             </form>
         </div>

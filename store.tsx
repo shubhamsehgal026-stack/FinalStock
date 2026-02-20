@@ -17,6 +17,8 @@ interface AppState {
   
   transactions: Transaction[];
   addTransaction: (t: Omit<Transaction, 'id' | 'createdAt'>) => void;
+  updateTransaction: (id: string, t: Partial<Transaction>) => Promise<void>;
+  deleteTransaction: (id: string) => Promise<void>;
   
   requests: StockRequest[];
   addRequest: (r: Omit<StockRequest, 'id' | 'createdAt' | 'status'>) => void;
@@ -435,6 +437,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const updateTransaction = async (id: string, t: Partial<Transaction>) => {
+      setTransactions(prev => prev.map(item => item.id === id ? { ...item, ...t } : item));
+      
+      const updatePayload: any = {};
+      if (t.date) updatePayload.date = t.date;
+      if (t.category) updatePayload.category = t.category;
+      if (t.subCategory) updatePayload.sub_category = t.subCategory;
+      if (t.itemName) updatePayload.item_name = t.itemName;
+      if (t.quantity !== undefined) updatePayload.quantity = t.quantity;
+      if (t.unitPrice !== undefined) updatePayload.unit_price = t.unitPrice;
+      if (t.totalValue !== undefined) updatePayload.total_value = t.totalValue;
+      if (t.issuedTo) updatePayload.issued_to = t.issuedTo;
+
+      const { error } = await supabase.from('transactions').update(updatePayload).eq('id', id);
+      if (error) console.error("Error updating transaction:", error);
+  };
+
+  const deleteTransaction = async (id: string) => {
+      setTransactions(prev => prev.filter(t => t.id !== id));
+      const { error } = await supabase.from('transactions').delete().eq('id', id);
+      if (error) console.error("Error deleting transaction:", error);
+  };
+
   const addRequest = async (r: Omit<StockRequest, 'id' | 'createdAt' | 'status'>) => {
     const createdAt = Date.now();
     const tempId = Math.random().toString(36).substr(2, 9);
@@ -693,7 +718,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   return (
     <AppContext.Provider value={{
-      currentUser, login, logout, transactions, addTransaction, requests, addRequest, updateRequest, deleteRequest, processRequest,
+      currentUser, login, logout, transactions, addTransaction, updateTransaction, deleteTransaction, requests, addRequest, updateRequest, deleteRequest, processRequest,
       adjustmentRequests, addAdjustmentRequest, processAdjustmentRequest, consumptionLogs, addConsumptionLog, returnRequests, addReturnRequest, completeReturnRequest,
       updatePassword, updateEmployeePassword, changeOwnPassword, getComputedStock, schools: SCHOOLS, userCredentials, employees, addEmployee, removeEmployee,
       categories, addCategory, updateCategory, isLoading, refreshData
